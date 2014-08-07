@@ -11,6 +11,8 @@
 #include <linux/module.h>
 #include <sound/soc.h>
 #include <sound/pcm_params.h>
+#include <sound/jack.h>
+#include "../codecs/max98090.h"
 #include "i2s.h"
 
 struct odroidx2_drv_data {
@@ -49,8 +51,51 @@ static const struct snd_soc_dapm_widget odroidx2_dapm_widgets[] = {
 
 static const struct snd_soc_dapm_widget odroidu3_dapm_widgets[] = {
 	SND_SOC_DAPM_HP("Headphone Jack", NULL),
+	SND_SOC_DAPM_MIC("Mic Jack", NULL),
 	SND_SOC_DAPM_SPK("Speakers", NULL),
 };
+
+/* Odroid-U3 Headset jack detection DAPM pins */
+static struct snd_soc_jack_pin odroidu3_hs_jack_pins[] = {
+	{
+		.pin	= "Headphone Jack",
+		.mask	= SND_JACK_HEADPHONE,
+	},
+	{
+		.pin	= "Mic Jack",
+		.mask	= SND_JACK_MICROPHONE,
+	},
+};
+
+static struct snd_soc_jack odroidu3_headset_jack;
+
+static int odroidx2_init(struct snd_soc_pcm_runtime *runtime)
+{
+	struct snd_soc_codec *codec = runtime->codec;
+	struct snd_soc_card *card = runtime->card;
+	int ret;
+
+	if (!strcmp(card->name, "Odroid-XU3")) {
+		ret = snd_soc_jack_new(codec, "Headset Jack", SND_JACK_HEADSET,
+				       &odroidu3_headset_jack);
+		if (ret) {
+			dev_err(card->dev, "Failed to create jack: %d\n", ret);
+			return ret;
+		}
+
+		ret = snd_soc_jack_add_pins(&odroidu3_headset_jack,
+					    ARRAY_SIZE(odroidu3_hs_jack_pins),
+					    odroidu3_hs_jack_pins);
+		if (ret) {
+			dev_err(card->dev, "Failed to add pins: %d\n", ret);
+			return ret;
+		}
+
+		return max98090_mic_detect(codec, &odroidu3_headset_jack);
+	}
+
+	return 0;
+}
 
 static struct snd_soc_dai_link odroidx2_dai[] = {
 	{
@@ -59,6 +104,7 @@ static struct snd_soc_dai_link odroidx2_dai[] = {
 		.codec_dai_name	= "HiFi",
 		.dai_fmt	= SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF |
 				  SND_SOC_DAIFMT_CBM_CFM,
+		.init		= odroidx2_init,
 	}
 };
 
