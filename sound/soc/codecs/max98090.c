@@ -2306,6 +2306,7 @@ static irqreturn_t max98090_interrupt(int irq, void *data)
 		active, mask, active & mask);
 
 	active &= mask;
+	active |= M98090_JDET_MASK;
 
 	if (!active)
 		return IRQ_NONE;
