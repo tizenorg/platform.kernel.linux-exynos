@@ -121,6 +121,15 @@
 /* maximum buffer pool size of userptr is 64MB as default */
 #define MAX_POOL		(64 * 1024 * 1024)
 
+enum g2d_version_id {
+	G2D_VER_4_1,
+	G2D_VER_4_3,
+};
+
+struct g2d_driver_data {
+	enum g2d_version_id	ver;
+};
+
 enum {
 	BUF_TYPE_GEM = 1,
 	BUF_TYPE_USERPTR,
@@ -224,6 +233,8 @@ struct g2d_data {
 	struct work_struct		runqueue_work;
 	struct exynos_drm_subdrv	subdrv;
 	bool				suspended;
+	u32				major_ver;
+	u32				minor_ver;
 
 	/* cmdlist */
 	struct g2d_cmdlist_node		*cmdlist_node;
@@ -1031,8 +1042,8 @@ int exynos_g2d_get_ver_ioctl(struct drm_device *drm_dev, void *data,
 	if (!g2d)
 		return -EFAULT;
 
-	ver->major = G2D_HW_MAJOR_VER;
-	ver->minor = G2D_HW_MINOR_VER;
+	ver->major = g2d->major_ver;
+	ver->minor = g2d->minor_ver;
 
 	return 0;
 }
@@ -1355,17 +1366,57 @@ static void g2d_close(struct drm_device *drm_dev, struct device *dev,
 	kfree(file_priv->g2d_priv);
 }
 
+static struct g2d_driver_data exynos5250_g2d_driver_data = {
+	.ver = G2D_VER_4_1,
+};
+
+static struct g2d_driver_data exynos4212_g2d_driver_data = {
+	.ver = G2D_VER_4_1,
+};
+
+static struct g2d_driver_data exynos5420_g2d_driver_data = {
+	.ver = G2D_VER_4_3,
+};
+
+static const struct of_device_id exynos_g2d_match[] = {
+	{
+		.compatible = "samsung,exynos5250-g2d",
+		.data = &exynos5250_g2d_driver_data,
+	}, {
+		.compatible = "samsung,exynos4212-g2d",
+		.data = &exynos4212_g2d_driver_data,
+	}, {
+		.compatible = "samsung,exynos5420-g2d",
+		.data = &exynos5420_g2d_driver_data,
+	}, {
+		/* end node */
+	},
+};
+MODULE_DEVICE_TABLE(of, exynos_g2d_match);
+
 static int g2d_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct resource *res;
 	struct g2d_data *g2d;
 	struct exynos_drm_subdrv *subdrv;
+	const struct of_device_id *match;
+	struct g2d_driver_data *drv_data;
 	int ret;
 
 	g2d = devm_kzalloc(dev, sizeof(*g2d), GFP_KERNEL);
 	if (!g2d)
 		return -ENOMEM;
+
+	match = of_match_node(exynos_g2d_match, dev->of_node);
+	if (!match)
+		return -ENODEV;
+
+	drv_data = (struct g2d_driver_data *)match->data;
+
+	g2d->major_ver = G2D_HW_MAJOR_VER;
+	g2d->minor_ver = drv_data->ver == G2D_VER_4_3 ?
+		G2D_HW_MINOR_VER + 2 : G2D_HW_MINOR_VER;
 
 	g2d->runqueue_slab = kmem_cache_create("g2d_runqueue_slab",
 			sizeof(struct g2d_runqueue_node), 0, 0, NULL);
@@ -1437,7 +1488,7 @@ static int g2d_probe(struct platform_device *pdev)
 	}
 
 	dev_info(dev, "The exynos g2d(ver %d.%d) successfully probed\n",
-			G2D_HW_MAJOR_VER, G2D_HW_MINOR_VER);
+			g2d->major_ver, g2d->minor_ver);
 
 	return 0;
 
@@ -1527,13 +1578,6 @@ static const struct dev_pm_ops g2d_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(g2d_suspend, g2d_resume)
 	SET_RUNTIME_PM_OPS(g2d_runtime_suspend, g2d_runtime_resume, NULL)
 };
-
-static const struct of_device_id exynos_g2d_match[] = {
-	{ .compatible = "samsung,exynos5250-g2d" },
-	{ .compatible = "samsung,exynos4212-g2d" },
-	{},
-};
-MODULE_DEVICE_TABLE(of, exynos_g2d_match);
 
 struct platform_driver g2d_driver = {
 	.probe		= g2d_probe,

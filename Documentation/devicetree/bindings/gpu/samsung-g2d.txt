@@ -5,6 +5,7 @@ Required properties:
 	(a) "samsung,s5pv210-g2d" for G2D IP present in S5PV210 & Exynos4210 SoC
 	(b) "samsung,exynos4212-g2d" for G2D IP present in Exynos4x12 SoCs
 	(c) "samsung,exynos5250-g2d" for G2D IP present in Exynos5250 SoC
+	(d) "samsung,exynos5420-g2d" for G2D IP present in Exynos542x SoC
 
   - reg : Physical base address of the IP registers and length of memory
 	  mapped region.
