@@ -128,6 +128,8 @@ enum g2d_version_id {
 
 struct g2d_driver_data {
 	enum g2d_version_id	ver;
+	bool			has_bus_clk;
+	bool			has_smmu_clk;
 };
 
 enum {
@@ -226,6 +228,8 @@ struct g2d_runqueue_node {
 
 struct g2d_data {
 	struct device			*dev;
+	struct clk			*bus_clk;
+	struct clk			*smmu_clk;
 	struct clk			*gate_clk;
 	void __iomem			*regs;
 	int				irq;
@@ -1376,6 +1380,8 @@ static struct g2d_driver_data exynos4212_g2d_driver_data = {
 
 static struct g2d_driver_data exynos5420_g2d_driver_data = {
 	.ver = G2D_VER_4_3,
+	.has_bus_clk = 1,
+	.has_smmu_clk = 1,
 };
 
 static const struct of_device_id exynos_g2d_match[] = {
@@ -1438,6 +1444,24 @@ static int g2d_probe(struct platform_device *pdev)
 
 	mutex_init(&g2d->cmdlist_mutex);
 	mutex_init(&g2d->runqueue_mutex);
+
+	if (drv_data->has_bus_clk) {
+		g2d->bus_clk = devm_clk_get(dev, "bus_clk");
+		if (IS_ERR(g2d->bus_clk)) {
+			dev_err(dev, "failed to get bus clock\n");
+			ret = PTR_ERR(g2d->bus_clk);
+			goto err_destroy_workqueue;
+		}
+	}
+
+	if (drv_data->has_smmu_clk) {
+		g2d->smmu_clk = devm_clk_get(dev, "smmu_clk");
+		if (IS_ERR(g2d->smmu_clk)) {
+			dev_err(dev, "failed to get smmu clock\n");
+			ret = PTR_ERR(g2d->smmu_clk);
+			goto err_destroy_workqueue;
+		}
+	}
 
 	g2d->gate_clk = devm_clk_get(dev, "fimg2d");
 	if (IS_ERR(g2d->gate_clk)) {
@@ -1557,6 +1581,10 @@ static int g2d_runtime_suspend(struct device *dev)
 	struct g2d_data *g2d = dev_get_drvdata(dev);
 
 	clk_disable_unprepare(g2d->gate_clk);
+	if (g2d->smmu_clk)
+		clk_disable_unprepare(g2d->smmu_clk);
+	if (g2d->bus_clk)
+		clk_disable_unprepare(g2d->bus_clk);
 
 	return 0;
 }
@@ -1566,11 +1594,35 @@ static int g2d_runtime_resume(struct device *dev)
 	struct g2d_data *g2d = dev_get_drvdata(dev);
 	int ret;
 
-	ret = clk_prepare_enable(g2d->gate_clk);
-	if (ret < 0)
-		dev_warn(dev, "failed to enable clock.\n");
+	if (g2d->bus_clk) {
+		ret = clk_prepare_enable(g2d->bus_clk);
+		if (ret < 0) {
+			dev_warn(dev, "failed to enable bus clock\n");
+			return ret;
+		}
+	}
 
-	return ret;
+	if (g2d->smmu_clk) {
+		ret = clk_prepare_enable(g2d->smmu_clk);
+		if (ret < 0) {
+			dev_warn(dev, "failed to enable smmu clock\n");
+			if (g2d->bus_clk)
+				clk_disable_unprepare(g2d->bus_clk);
+			return ret;
+		}
+	}
+
+	ret = clk_prepare_enable(g2d->gate_clk);
+	if (ret < 0) {
+		dev_warn(dev, "failed to enable clock.\n");
+		if (g2d->smmu_clk)
+			clk_disable_unprepare(g2d->smmu_clk);
+		if (g2d->bus_clk)
+			clk_disable_unprepare(g2d->bus_clk);
+		return ret;
+	}
+
+	return 0;
 }
 #endif
 
