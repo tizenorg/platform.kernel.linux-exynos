@@ -948,6 +948,17 @@
 		clock-names = "secss";
 	};
 
+	g2d: g2d@10850000 {
+		compatible = "samsung,exynos5420-g2d";
+		reg = <0x10850000 0x1000>;
+		interrupts = <0 91 0>;
+		clocks = <&clock CLK_G2D>, <&clock CLK_ACLK266_G2D>,
+			 <&clock CLK_SMMU_G2D>;
+		clock-names = "fimg2d", "bus_clk", "smmu_clk";
+		iommus = <&sysmmu_g2dr>, <&sysmmu_g2dw>;
+		iommu-names = "rd", "wr";
+	};
+
 	mali: mali@11800000 {
 		compatible = "arm,mali-midgard";
 		reg = <0x11800000 0x5000>;
@@ -1062,7 +1073,7 @@
 		interrupt-parent = <&combiner>;
 		interrupts = <24 5>;
 		clock-names = "sysmmu", "master";
-		clocks = <&clock CLK_SMMU_G2D>, <&clock CLK_G2D>;
+		clocks = <&clock CLK_SMMU_G2D>, <&clock CLK_ACLK266_G2D>;
 		#iommu-cells = <0>;
 	};
 
@@ -1072,7 +1083,7 @@
 		interrupt-parent = <&combiner>;
 		interrupts = <22 2>;
 		clock-names = "sysmmu", "master";
-		clocks = <&clock CLK_SMMU_G2D>, <&clock CLK_G2D>;
+		clocks = <&clock CLK_SMMU_G2D>, <&clock CLK_ACLK266_G2D>;
 		#iommu-cells = <0>;
 	};
 
