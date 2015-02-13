@@ -909,7 +909,7 @@ static struct samsung_gate_clock exynos5x_gate_clks[] __initdata = {
 
 	GATE(0, "aclk333_g2d", "mout_user_aclk333_g2d",
 			GATE_BUS_TOP, 0, CLK_IGNORE_UNUSED, 0),
-	GATE(0, "aclk266_g2d", "mout_user_aclk266_g2d",
+	GATE(CLK_ACLK266_G2D, "aclk266_g2d", "mout_user_aclk266_g2d",
 			GATE_BUS_TOP, 1, CLK_IGNORE_UNUSED, 0),
 	GATE(0, "aclk300_jpeg", "mout_user_aclk300_jpeg",
 			GATE_BUS_TOP, 4, CLK_IGNORE_UNUSED, 0),
