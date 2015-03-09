@@ -798,6 +798,7 @@
 		interrupts = <0 89 0>;
 		clock-names = "jpeg";
 		clocks = <&clock CLK_JPEG>;
+		iommus = <&sysmmu_jpeg>;
 	};
 
 	jpeg_1: jpeg@11F60000 {
@@ -806,6 +807,7 @@
 		interrupts = <0 168 0>;
 		clock-names = "jpeg";
 		clocks = <&clock CLK_JPEG2>;
+		iommus = <&sysmmu_jpeg2>;
 	};
 
 	pmu_system_controller: system-controller@10040000 {
