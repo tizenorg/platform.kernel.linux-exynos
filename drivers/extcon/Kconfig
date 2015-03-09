@@ -93,4 +93,8 @@ config EXTCON_SM5502
 	  Silicon Mitus SM5502. The SM5502 is a USB port accessory
 	  detector and switch.
 
+config EXTCON_ODROID_USBOTG
+	tristate "Extcon Odroid U3, U3+, X and XU USB OTG port"
+	depends on OF_GPIO
+
 endif # MULTISTATE_SWITCH
