@@ -924,10 +924,9 @@ static void mixer_disable_vblank(struct exynos_drm_crtc *crtc)
 	mixer_reg_writemask(res, MXR_INT_EN, 0, MXR_INT_EN_VSYNC);
 }
 
-static void mixer_win_commit(struct exynos_drm_crtc *crtc, int zpos)
+static void mixer_win_commit(struct exynos_drm_crtc *crtc, unsigned int win)
 {
 	struct mixer_context *mixer_ctx = crtc->ctx;
-	int win = zpos == DEFAULT_ZPOS ? MIXER_DEFAULT_WIN : zpos;
 
 	DRM_DEBUG_KMS("win: %d\n", win);
 
@@ -946,11 +945,10 @@ static void mixer_win_commit(struct exynos_drm_crtc *crtc, int zpos)
 	mixer_ctx->planes[win].enabled = true;
 }
 
-static void mixer_win_disable(struct exynos_drm_crtc *crtc, int zpos)
+static void mixer_win_disable(struct exynos_drm_crtc *crtc, unsigned int win)
 {
 	struct mixer_context *mixer_ctx = crtc->ctx;
 	struct mixer_resources *res = &mixer_ctx->mixer_res;
-	int win = zpos == DEFAULT_ZPOS ? MIXER_DEFAULT_WIN : zpos;
 	unsigned long flags;
 
 	DRM_DEBUG_KMS("win: %d\n", win);
@@ -1206,7 +1204,8 @@ static int mixer_bind(struct device *dev, struct device *manager, void *data)
 	struct drm_device *drm_dev = data;
 	struct exynos_drm_plane *exynos_plane;
 	enum drm_plane_type type;
-	int zpos, ret;
+	unsigned int zpos;
+	int ret;
 
 	ret = mixer_initialize(ctx, drm_dev);
 	if (ret)
@@ -1216,7 +1215,7 @@ static int mixer_bind(struct device *dev, struct device *manager, void *data)
 		type = (zpos == MIXER_DEFAULT_WIN) ? DRM_PLANE_TYPE_PRIMARY :
 						DRM_PLANE_TYPE_OVERLAY;
 		ret = exynos_plane_init(drm_dev, &ctx->planes[zpos],
-					1 << ctx->pipe, type);
+					1 << ctx->pipe, type, zpos);
 		if (ret)
 			return ret;
 	}
