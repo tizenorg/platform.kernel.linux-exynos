@@ -226,6 +226,27 @@ void pm_runtime_set_memalloc_noio(struct device *dev, bool enable)
 }
 EXPORT_SYMBOL_GPL(pm_runtime_set_memalloc_noio);
 
+int pm_runtime_notifier_call(struct device *dev, enum rpm_event event)
+{
+	return atomic_notifier_call_chain(&dev->power.runtime_notifier,
+					  event, dev);
+}
+
+int pm_runtime_register_notifier(struct device *dev, struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&dev->power.runtime_notifier,
+					      nb);
+}
+EXPORT_SYMBOL_GPL(pm_runtime_register_notifier);
+
+int pm_runtime_unregister_notifier(struct device *dev,
+				    struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&dev->power.runtime_notifier,
+						nb);
+}
+EXPORT_SYMBOL_GPL(pm_runtime_unregister_notifier);
+
 /**
  * rpm_check_suspend_allowed - Test whether a device may be suspended.
  * @dev: Device to test.
@@ -1144,6 +1165,7 @@ void __pm_runtime_disable(struct device *dev, bool check_resume)
 		goto out;
 	}
 
+	pm_runtime_notifier_call(dev, RPM_EVENT_DISABLE_PRE);
 	/*
 	 * Wake up the device if there's a resume request pending, because that
 	 * means there probably is some I/O to process and disabling runtime PM
@@ -1165,6 +1187,7 @@ void __pm_runtime_disable(struct device *dev, bool check_resume)
 	if (!dev->power.disable_depth++)
 		__pm_runtime_barrier(dev);
 
+	pm_runtime_notifier_call(dev, RPM_EVENT_DISABLE_POST);
  out:
 	spin_unlock_irq(&dev->power.lock);
 }
@@ -1180,10 +1203,16 @@ void pm_runtime_enable(struct device *dev)
 
 	spin_lock_irqsave(&dev->power.lock, flags);
 
-	if (dev->power.disable_depth > 0)
+	if (dev->power.disable_depth > 0) {
+		if (dev->power.disable_depth == 1)
+			pm_runtime_notifier_call(dev, RPM_EVENT_ENABLE_PRE);
 		dev->power.disable_depth--;
-	else
+	} else {
 		dev_warn(dev, "Unbalanced %s!\n", __func__);
+	}
+
+	if (dev->power.disable_depth == 0)
+		pm_runtime_notifier_call(dev, RPM_EVENT_ENABLE_POST);
 
 	spin_unlock_irqrestore(&dev->power.lock, flags);
 }
@@ -1381,6 +1410,7 @@ void pm_runtime_init(struct device *dev)
 			(unsigned long)dev);
 
 	init_waitqueue_head(&dev->power.wait_queue);
+	ATOMIC_INIT_NOTIFIER_HEAD(&dev->power.runtime_notifier);
 }
 
 /**

@@ -18,6 +18,7 @@
 #include <linux/sched.h>
 #include <linux/suspend.h>
 #include <linux/export.h>
+#include "power.h"
 
 #define GENPD_DEV_CALLBACK(genpd, type, callback, dev)		\
 ({								\

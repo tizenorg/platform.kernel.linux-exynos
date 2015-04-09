@@ -9,6 +9,7 @@
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
 #include <linux/export.h>
+#include "power.h"
 
 #ifdef CONFIG_PM
 /**
@@ -24,7 +25,11 @@ int pm_generic_runtime_suspend(struct device *dev)
 	const struct dev_pm_ops *pm = dev->driver ? dev->driver->pm : NULL;
 	int ret;
 
+	pm_runtime_notifier_call(dev, RPM_EVENT_SUSPEND_PRE);
+
 	ret = pm && pm->runtime_suspend ? pm->runtime_suspend(dev) : 0;
+
+	pm_runtime_notifier_call(dev, RPM_EVENT_SUSPEND_POST);
 
 	return ret;
 }
@@ -43,7 +48,11 @@ int pm_generic_runtime_resume(struct device *dev)
 	const struct dev_pm_ops *pm = dev->driver ? dev->driver->pm : NULL;
 	int ret;
 
+	pm_runtime_notifier_call(dev, RPM_EVENT_RESUME_PRE);
+
 	ret = pm && pm->runtime_resume ? pm->runtime_resume(dev) : 0;
+
+	pm_runtime_notifier_call(dev, RPM_EVENT_RESUME_POST);
 
 	return ret;
 }

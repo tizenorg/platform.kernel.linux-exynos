@@ -23,6 +23,43 @@
 					    usage_count */
 #define RPM_AUTO		0x08	/* Use autosuspend_delay */
 
+/**
+ * Runtime PM notifier events.
+ *
+ * TODO: RPM_EVENT_SUSPEND/RPM_EVENT_RESUME are supported
+ * currently only with generic power domains. They won't be executed
+ * in other cases. Fix this.
+ *
+ * RPM_EVENT_SUSPEND_PRE	Before calling device suspend callback
+ * 				and before turning domain off
+ * RPM_EVENT_SUSPEND_POST	After suspending device and before turning
+ * 				domain off
+ *
+ * RPM_EVENT_RESUME_PRE		Before calling device resume callback
+ * 				but after turning domain on
+ * RPM_EVENT_RESUME_POST	After resuming device
+ *
+ * RPM_EVENT_ENABLE_PRE		Before effectively enabling runtime PM
+ * 				(the pm_runtime_enable() call must undo the
+ * 				last pm_runtime_disable() call)
+ * RPM_EVENT_ENABLE_POST	After effectively enabling runtime PM
+ *
+ * RPM_EVENT_DISABLE_PRE	Before effectively disabling runtime PM
+ * 				(the first pm_runtime_disable() call)
+ * RPM_EVENT_DISABLE_POST	After effectively disabling runtime PM
+ */
+enum rpm_event {
+	RPM_EVENT_SUSPEND_PRE,
+	RPM_EVENT_SUSPEND_POST,
+	RPM_EVENT_RESUME_PRE,
+	RPM_EVENT_RESUME_POST,
+	RPM_EVENT_ENABLE_PRE,
+	RPM_EVENT_ENABLE_POST,
+	RPM_EVENT_DISABLE_PRE,
+	RPM_EVENT_DISABLE_POST,
+	RPM_EVENT_NUM,
+};
+
 #ifdef CONFIG_PM
 extern struct workqueue_struct *pm_wq;
 
@@ -54,6 +91,10 @@ extern unsigned long pm_runtime_autosuspend_expiration(struct device *dev);
 extern void pm_runtime_update_max_time_suspended(struct device *dev,
 						 s64 delta_ns);
 extern void pm_runtime_set_memalloc_noio(struct device *dev, bool enable);
+extern int pm_runtime_register_notifier(struct device *dev,
+					struct notifier_block *nb);
+extern int pm_runtime_unregister_notifier(struct device *dev,
+					   struct notifier_block *nb);
 
 static inline bool pm_children_suspended(struct device *dev)
 {
@@ -181,6 +222,16 @@ static inline unsigned long pm_runtime_autosuspend_expiration(
 				struct device *dev) { return 0; }
 static inline void pm_runtime_set_memalloc_noio(struct device *dev,
 						bool enable){}
+static inline int pm_runtime_register_notifier(struct device *dev,
+					struct notifier_block *nb)
+{
+	return -ENOSYS;
+}
+static innline int pm_runtime_unregister_notifier(struct device *dev,
+					   struct notifier_block *nb)
+{
+	return 0;
+};
 
 #endif /* !CONFIG_PM */
 

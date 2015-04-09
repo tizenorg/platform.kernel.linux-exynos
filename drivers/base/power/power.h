@@ -1,4 +1,5 @@
 #include <linux/pm_qos.h>
+#include <linux/pm_runtime.h>
 
 static inline void device_pm_init_common(struct device *dev)
 {
@@ -19,6 +20,7 @@ static inline void pm_runtime_early_init(struct device *dev)
 
 extern void pm_runtime_init(struct device *dev);
 extern void pm_runtime_remove(struct device *dev);
+extern int pm_runtime_notifier_call(struct device *dev, enum rpm_event event);
 
 /*
  * sysfs.c
@@ -43,6 +45,10 @@ static inline void pm_runtime_early_init(struct device *dev)
 
 static inline void pm_runtime_init(struct device *dev) {}
 static inline void pm_runtime_remove(struct device *dev) {}
+static inline pm_runtime_notifier_call(struct device *dev, enum rpm_event event)
+{
+	return 0;
+}
 
 static inline int dpm_sysfs_add(struct device *dev) { return 0; }
 static inline void dpm_sysfs_remove(struct device *dev) {}
