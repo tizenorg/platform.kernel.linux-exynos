@@ -417,6 +417,9 @@ extern void init_kmsg_minor(int minor);
 
 extern int kmsg_sys_mode(int minor, umode_t *mode);
 
+extern int kmsg_sys_buffer_add(size_t size, umode_t mode);
+extern void kmsg_sys_buffer_del(int minor);
+
 enum {
 	DUMP_PREFIX_NONE,
 	DUMP_PREFIX_ADDRESS,
