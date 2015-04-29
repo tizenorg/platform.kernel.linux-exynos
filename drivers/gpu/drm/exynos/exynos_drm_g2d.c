@@ -151,7 +151,7 @@ enum g2d_reg_type {
 /* cmdlist data structure */
 struct g2d_cmdlist {
 	u32		head;
-	unsigned long	data[G2D_CMDLIST_DATA_NUM];
+	u32		data[G2D_CMDLIST_DATA_NUM];
 	u32		last;	/* last data offset */
 };
 
@@ -1021,7 +1021,7 @@ static int g2d_check_reg_offset(struct device *dev,
 	return 0;
 
 err:
-	dev_err(dev, "Bad register offset: 0x%lx\n", cmdlist->data[index]);
+	dev_err(dev, "Bad register offset: 0x%x\n", cmdlist->data[index]);
 	return -EINVAL;
 }
 
