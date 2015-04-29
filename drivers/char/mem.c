@@ -806,6 +806,10 @@ static const struct memdev {
 #endif
 };
 
+#ifdef CONFIG_PRINTK
+#define KMSG_MINOR	11
+#endif
+
 static int memory_open(struct inode *inode, struct file *filp)
 {
 	int minor;
@@ -852,6 +856,10 @@ static int __init chr_dev_init(void)
 	mem_class = class_create(THIS_MODULE, "mem");
 	if (IS_ERR(mem_class))
 		return PTR_ERR(mem_class);
+
+#ifdef CONFIG_PRINTK
+	init_kmsg_minor(KMSG_MINOR);
+#endif
 
 	mem_class->devnode = mem_devnode;
 	for (minor = 1; minor < ARRAY_SIZE(devlist); minor++) {
