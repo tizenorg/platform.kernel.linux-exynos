@@ -817,7 +817,11 @@ static int memory_open(struct inode *inode, struct file *filp)
 
 	minor = iminor(inode);
 	if (minor >= ARRAY_SIZE(devlist))
+#ifdef CONFIG_PRINTK
+		minor = KMSG_MINOR;
+#else
 		return -ENXIO;
+#endif
 
 	dev = &devlist[minor];
 	if (!dev->fops)
@@ -839,8 +843,20 @@ static const struct file_operations memory_fops = {
 
 static char *mem_devnode(struct device *dev, umode_t *mode)
 {
-	if (mode && devlist[MINOR(dev->devt)].mode)
-		*mode = devlist[MINOR(dev->devt)].mode;
+	int minor;
+
+	if (!mode)
+		return NULL;
+
+	minor = MINOR(dev->devt);
+
+#ifdef CONFIG_PRINTK
+	if (minor >= ARRAY_SIZE(devlist))
+		kmsg_sys_mode(minor, mode);
+	else
+#endif
+		if (devlist[minor].mode)
+			*mode = devlist[minor].mode;
 	return NULL;
 }
 
