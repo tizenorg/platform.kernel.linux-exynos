@@ -832,29 +832,13 @@ static int kmsg_sys_write(int minor, int level,
 	return ret;
 }
 
-static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
+static int kmsg_write(int minor, const char *dict, size_t dictlen,
+			const char *line)
 {
-	char *buf, *line;
 	int i;
-	int level = default_message_loglevel;
 	int facility = 1;	/* LOG_USER */
-	size_t len = iov_iter_count(from);
-	char dict[KMSG_DICT_MAX_LEN];
-	size_t dictlen;
-	ssize_t ret = len;
-	int minor = iminor(iocb->ki_filp->f_inode);
-
-	if (len > LOG_LINE_MAX)
-		return -EINVAL;
-	buf = kmalloc(len+1, GFP_KERNEL);
-	if (buf == NULL)
-		return -ENOMEM;
-
-	buf[len] = '\0';
-	if (copy_from_iter(buf, len, from) != len) {
-		kfree(buf);
-		return -EFAULT;
-	}
+	int level = default_message_loglevel;
+	int ret = 0;
 
 	/*
 	 * Extract and skip the syslog prefix <[0-9]*>. Coming from userspace
@@ -865,7 +849,6 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 	 * enforce LOG_USER, to be able to reliably distinguish
 	 * kernel-generated messages from userspace-injected ones.
 	 */
-	line = buf;
 	if (line[0] == '<') {
 		char *endp = NULL;
 
@@ -875,12 +858,9 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 			if (i >> 3)
 				facility = i >> 3;
 			endp++;
-			len -= endp - line;
 			line = endp;
 		}
 	}
-
-	dictlen = set_kmsg_dict(dict);
 
 	if (minor == log_buf.minor) {
 		printk_emit(facility, level, dict, dictlen, "%s", line);
@@ -892,7 +872,119 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 			ret = error;
 	}
 
+	return ret;
+}
+
+static ssize_t devkmsg_write_iter(struct kiocb *iocb, struct iov_iter *from)
+{
+	char *buf;
+	size_t i;
+	ssize_t ret = iov_iter_count(from);
+	size_t len = from->iov[0].iov_len;
+	char *dict;
+	size_t dictlen = KMSG_DICT_MAX_LEN +
+			from->count - len + from->nr_segs-1;
+	size_t count;
+	int minor = iminor(iocb->ki_filp->f_inode);
+	unsigned long seg;
+	ssize_t error;
+
+	if (len > LOG_LINE_MAX)
+		return -EINVAL;
+	if (((from->nr_segs >> 1) << 1) == from->nr_segs)
+		return -EINVAL;
+	buf = kmalloc(len+1, GFP_KERNEL);
+	if (buf == NULL)
+		return -ENOMEM;
+	dict = kmalloc(dictlen, GFP_KERNEL);
+	if (dict == NULL) {
+		kfree(buf);
+		return -ENOMEM;
+	}
+
+	buf[len] = '\0';
+	if (copy_from_user(buf, from->iov[0].iov_base, len)) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+	count = set_kmsg_dict(dict);
+
+	for (seg = 1; seg < from->nr_segs;) {
+		dict[count++] = '\0';
+		if (copy_from_user(dict+count, from->iov[seg].iov_base,
+				   from->iov[seg].iov_len)) {
+			ret = -EFAULT;
+			goto out;
+		}
+		for (i = 0; i < from->iov[seg].iov_len; ++i) {
+			char c = dict[count+i];
+
+			if ((c >= '0' && c <= '9') ||
+			    (c >= 'A' && c <= 'Z') ||
+			    (c >= 'a' && c <= 'z') ||
+			    c == '.' || c == '-' || c == '_')
+				continue;
+			ret = -EINVAL;
+			goto out;
+		}
+		count += from->iov[seg++].iov_len;
+		dict[count++] = '=';
+		if (copy_from_user(dict+count, from->iov[seg].iov_base,
+				   from->iov[seg].iov_len)) {
+			ret = -EFAULT;
+			goto out;
+		}
+		for (i = 0; i < from->iov[seg].iov_len; ++i) {
+			char c = dict[count+i];
+
+			if (c > 32 && c < 127)
+				continue;
+			ret = -EINVAL;
+			goto out;
+		}
+		count += from->iov[seg++].iov_len;
+	}
+
+	error = kmsg_write(minor, dict, count, buf);
+	if (0 != error)
+		ret = error;
+
+out:
+	kfree(dict);
 	kfree(buf);
+	return ret;
+}
+
+static ssize_t devkmsg_write(struct file *file, const char __user *buf,
+			     size_t count, loff_t *ppos)
+{
+	char *kbuf;
+	ssize_t ret = count;
+	char dict[KMSG_DICT_MAX_LEN];
+	size_t dictlen;
+	int minor = iminor(file->f_inode);
+	ssize_t error;
+
+	if (count > LOG_LINE_MAX)
+		return -EINVAL;
+	kbuf = kmalloc(count+1, GFP_KERNEL);
+	if (kbuf == NULL)
+		return -ENOMEM;
+
+	kbuf[count] = '\0';
+	if (copy_from_user(kbuf, buf, count)) {
+		kfree(kbuf);
+		return -EFAULT;
+	}
+
+	dictlen = set_kmsg_dict(dict);
+
+	error = kmsg_write(minor, dict, dictlen, kbuf);
+	if (0 != error)
+		ret = error;
+
+	kfree(kbuf);
 	return ret;
 }
 
@@ -1239,7 +1331,8 @@ static int devkmsg_release(struct inode *inode, struct file *file)
 const struct file_operations kmsg_fops = {
 	.open = devkmsg_open,
 	.read = devkmsg_read,
-	.write_iter = devkmsg_write,
+	.write = devkmsg_write,
+	.write_iter = devkmsg_write_iter,
 	.llseek = devkmsg_llseek,
 	.poll = devkmsg_poll,
 	.release = devkmsg_release,
