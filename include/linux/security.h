@@ -53,6 +53,10 @@ struct msg_queue;
 struct xattr;
 struct xfrm_sec_ctx;
 struct mm_struct;
+struct kdbus_ep;
+struct kdbus_bus;
+struct kdbus_conn;
+struct kdbus_domain;
 
 /* Maximum number of letters for an LSM name string */
 #define SECURITY_NAME_MAX	10
@@ -1455,6 +1459,36 @@ static inline void security_free_mnt_opts(struct security_mnt_opts *opts)
  * 	@inode we wish to get the security context of.
  *	@ctx is a pointer in which to place the allocated security context.
  *	@ctxlen points to the place to put the length of @ctx.
+ *
+ * @kdbus_domain_alloc:
+ *	Allocate kdbus domain.
+ * @kdbus_domain_free:
+ *	Deallocate kdbus domain.
+ * @kdbus_bus_alloc:
+ *	Allocate kdbus bus.
+ * @kdbus_bus_free:
+ *	Deallocate kdbus bus.
+ * @kdbus_send:
+ *	Send message.
+ * @kdbus_recv:
+ *	Receive message.
+ * @kdbus_name_acquire:
+ *	Request a well-known bus name to associate with the connection.
+ * @kdbus_name_list:
+ *	Retrieve the list of all currently registered well-known and unique
+ *	names.
+ * @kdbus_ep_create:
+ *	Endpoint create
+ * @kdbus_connect:
+ *	Connect
+ * @kdbus_conn_free:
+ *	Deallocate connection
+ * @kdbus_conn_info:
+ *	Retrieve credentials and properties of the initial creator of the
+ *	connection.
+ * @kdbus_talk:
+ *	Talk to a given peer.
+ *
  * This is the main security structure.
  */
 struct security_operations {
@@ -1671,6 +1705,28 @@ struct security_operations {
 	int (*inode_notifysecctx)(struct inode *inode, void *ctx, u32 ctxlen);
 	int (*inode_setsecctx)(struct dentry *dentry, void *ctx, u32 ctxlen);
 	int (*inode_getsecctx)(struct inode *inode, void **ctx, u32 *ctxlen);
+
+	int (*kdbus_domain_alloc)(struct kdbus_domain *domain);
+	void (*kdbus_domain_free)(struct kdbus_domain *domain);
+
+	int (*kdbus_bus_alloc)(struct kdbus_bus *bus);
+	void (*kdbus_bus_free)(struct kdbus_bus *bus);
+	int (*kdbus_send)(const struct kdbus_conn *conn,
+			  const struct kdbus_bus *bus);
+	int (*kdbus_recv)(const struct kdbus_conn *conn,
+			  const struct kdbus_bus *bus);
+	int (*kdbus_name_acquire)(const struct kdbus_conn *conn,
+			  const char *name);
+	int (*kdbus_name_list)(const struct kdbus_bus *bus);
+
+	int (*kdbus_ep_create)(const struct kdbus_bus *bus);
+	int (*kdbus_ep_setpolicy)(const struct kdbus_bus *bus);
+
+	int (*kdbus_connect)(struct kdbus_conn *conn);
+	void (*kdbus_conn_free)(struct kdbus_conn *conn);
+	int (*kdbus_conn_info)(const struct kdbus_conn *conn);
+	int (*kdbus_talk)(const struct kdbus_conn *src,
+			  const struct kdbus_conn *dst);
 
 #ifdef CONFIG_SECURITY_NETWORK
 	int (*unix_stream_connect) (struct sock *sock, struct sock *other, struct sock *newsk);
@@ -1939,6 +1995,29 @@ void security_release_secctx(char *secdata, u32 seclen);
 int security_inode_notifysecctx(struct inode *inode, void *ctx, u32 ctxlen);
 int security_inode_setsecctx(struct dentry *dentry, void *ctx, u32 ctxlen);
 int security_inode_getsecctx(struct inode *inode, void **ctx, u32 *ctxlen);
+
+int security_kdbus_domain_alloc(struct kdbus_domain *domain);
+void security_kdbus_domain_free(struct kdbus_domain *domain);
+
+int security_kdbus_bus_alloc(struct kdbus_bus *bus);
+void security_kdbus_bus_free(struct kdbus_bus *bus);
+int security_kdbus_send(const struct kdbus_conn *conn,
+			const struct kdbus_bus *bus);
+int security_kdbus_recv(const struct kdbus_conn *conn,
+			const struct kdbus_bus *bus);
+int security_kdbus_name_acquire(const struct kdbus_conn *conn,
+				const char *name);
+int security_kdbus_name_list(const struct kdbus_bus *bus);
+
+int security_kdbus_ep_create(struct kdbus_bus *bus);
+int security_kdbus_ep_setpolicy(struct kdbus_bus *bus);
+
+int security_kdbus_connect(struct kdbus_conn *conn);
+void security_kdbus_conn_free(struct kdbus_conn *conn);
+int security_kdbus_conn_info(const struct kdbus_conn *conn);
+int security_kdbus_talk(const struct kdbus_conn *src,
+			const struct kdbus_conn *dst);
+
 #else /* CONFIG_SECURITY */
 struct security_mnt_opts {
 };
@@ -2688,6 +2767,77 @@ static inline int security_inode_getsecctx(struct inode *inode, void **ctx, u32 
 {
 	return -EOPNOTSUPP;
 }
+
+static inline int security_kdbus_domain_alloc(struct kdbus_domain *domain)
+{
+	return 0;
+}
+static inline void security_kdbus_domain_free(struct kdbus_domain *domain)
+{
+}
+
+static inline int security_kdbus_bus_alloc(struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static inline void security_kdbus_bus_free(struct kdbus_bus *bus)
+{
+}
+
+static inline int security_kdbus_send(const struct kdbus_conn *conn,
+				      const struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static inline int security_kdbus_recv(const struct kdbus_conn *conn,
+				      const struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static inline int security_kdbus_name_acquire(const struct kdbus_conn *conn,
+					      const char *name)
+{
+	return 0;
+}
+
+static inline int security_kdbus_name_list(const struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static inline int security_kdbus_ep_create(const struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static inline int security_kdbus_ep_setpolicy(const struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static inline int security_kdbus_connect(struct kdbus_conn *conn)
+{
+	return 0;
+}
+
+static inline void security_kdbus_conn_free(struct kdbus_conn *conn)
+{
+}
+
+static inline int security_kdbus_conn_info(const struct kdbus_conn *conn)
+{
+	return 0;
+}
+
+static inline int security_kdbus_talk(const struct kdbus_conn *src,
+				      const struct kdbus_conn *dst)
+{
+	return 0;
+}
+
 #endif	/* CONFIG_SECURITY */
 
 #ifdef CONFIG_SECURITY_NETWORK
