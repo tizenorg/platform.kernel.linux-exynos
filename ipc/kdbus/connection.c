@@ -31,6 +31,7 @@
 #include <linux/slab.h>
 #include <linux/syscalls.h>
 #include <linux/uio.h>
+#include <linux/security.h>
 
 #include "bus.h"
 #include "connection.h"
@@ -73,6 +74,8 @@ static struct kdbus_conn *kdbus_conn_new(struct kdbus_ep *ep, bool privileged,
 	bool is_activator;
 	bool is_monitor;
 	struct kvec kvec;
+	u32 sid, len;
+	char *label;
 	int ret;
 
 	struct {
@@ -222,6 +225,12 @@ static struct kdbus_conn *kdbus_conn_new(struct kdbus_ep *ep, bool privileged,
 		}
 	}
 
+	security_task_getsecid(current, &sid);
+	security_secid_to_secctx(sid, &label, &len);
+	ret = security_kdbus_connect(conn, label, len);
+	if (ret)
+		goto exit_unref;
+
 	if (atomic_inc_return(&conn->user->connections) > KDBUS_USER_MAX_CONN) {
 		/* decremented by destructor as conn->user is valid */
 		ret = -EMFILE;
@@ -276,6 +285,7 @@ static void __kdbus_conn_free(struct kref *kref)
 	kdbus_pool_free(conn->pool);
 	kdbus_ep_unref(conn->ep);
 	put_cred(conn->cred);
+	security_kdbus_conn_free(conn);
 	kfree(conn->description);
 	kfree(conn->quota);
 	kfree(conn);
@@ -1115,6 +1125,10 @@ static int kdbus_conn_reply(struct kdbus_conn *src, struct kdbus_kmsg *kmsg)
 	if (ret < 0)
 		goto exit;
 
+	ret = security_kdbus_talk(src, dst);
+	if (ret)
+		goto exit;
+
 	mutex_lock(&dst->lock);
 	reply = kdbus_reply_find(src, dst, kmsg->msg.cookie_reply);
 	if (reply) {
@@ -1204,6 +1218,10 @@ static struct kdbus_reply *kdbus_conn_call(struct kdbus_conn *src,
 	if (ret < 0)
 		goto exit;
 
+	ret = security_kdbus_talk(src, dst);
+	if (ret)
+		goto exit;
+
 	if (!kdbus_conn_policy_talk(src, current_cred(), dst)) {
 		ret = -EPERM;
 		goto exit;
@@ -1272,6 +1290,10 @@ static int kdbus_conn_unicast(struct kdbus_conn *src, struct kdbus_kmsg *kmsg)
 
 	ret = kdbus_pin_dst(bus, kmsg, &name, &dst);
 	if (ret < 0)
+		goto exit;
+
+	ret = security_kdbus_talk(src, dst);
+	if (ret)
 		goto exit;
 
 	if (is_signal) {
@@ -1675,6 +1697,10 @@ struct kdbus_conn *kdbus_cmd_hello(struct kdbus_ep *ep, bool privileged,
 		if (ret < 0)
 			goto exit;
 
+		ret = security_kdbus_ep_setpolicy(c->ep->bus);
+		if (ret)
+			goto exit;
+
 		ret = kdbus_policy_set(&c->ep->bus->policy_db, args.items,
 				       args.items_size, 1,
 				       kdbus_conn_is_policy_holder(c), c);
@@ -1766,6 +1792,10 @@ int kdbus_cmd_conn_info(struct kdbus_conn *conn, void __user *argp)
 
 	ret = kdbus_args_parse(&args, argp, &cmd);
 	if (ret != 0)
+		return ret;
+
+	ret = security_kdbus_conn_info(conn);
+	if (ret)
 		return ret;
 
 	/* registry must be held throughout lookup *and* collecting data */
@@ -1941,6 +1971,10 @@ int kdbus_cmd_update(struct kdbus_conn *conn, void __user *argp)
 	/* now that we verified the input, update the connection */
 
 	if (item_policy) {
+		ret = security_kdbus_ep_setpolicy(conn->ep->bus);
+		if (ret)
+			goto exit;
+
 		ret = kdbus_policy_set(&conn->ep->bus->policy_db, cmd->items,
 				       KDBUS_ITEMS_SIZE(cmd, items),
 				       1, true, conn);
@@ -1983,6 +2017,10 @@ int kdbus_cmd_send(struct kdbus_conn *conn, struct file *f, void __user *argp)
 		.argv = argv,
 		.argc = ARRAY_SIZE(argv),
 	};
+
+	ret = security_kdbus_send(conn, conn->ep->bus);
+	if (ret)
+		return ret;
 
 	if (!kdbus_conn_is_ordinary(conn))
 		return -EOPNOTSUPP;
@@ -2079,6 +2117,10 @@ int kdbus_cmd_recv(struct kdbus_conn *conn, void __user *argp)
 		.argv = argv,
 		.argc = ARRAY_SIZE(argv),
 	};
+
+	ret = security_kdbus_recv(conn, conn->ep->bus);
+	if (ret)
+		return ret;
 
 	if (!kdbus_conn_is_ordinary(conn) &&
 	    !kdbus_conn_is_monitor(conn) &&

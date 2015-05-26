@@ -21,6 +21,7 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/uio.h>
+#include <linux/security.h>
 
 #include "bus.h"
 #include "connection.h"
@@ -121,6 +122,10 @@ struct kdbus_ep *kdbus_ep_new(struct kdbus_bus *bus, const char *name,
 	INIT_LIST_HEAD(&e->conn_list);
 	kdbus_policy_db_init(&e->policy_db);
 	e->bus = kdbus_bus_ref(bus);
+
+	ret = security_kdbus_ep_create(bus);
+	if (ret)
+		goto exit_unref;
 
 	ret = kdbus_node_link(&e->node, &bus->node, name);
 	if (ret < 0)
@@ -264,6 +269,10 @@ int kdbus_cmd_ep_update(struct kdbus_ep *ep, void __user *argp)
 		.argv = argv,
 		.argc = ARRAY_SIZE(argv),
 	};
+
+	ret = security_kdbus_ep_setpolicy(ep->bus);
+	if (ret)
+		return ret;
 
 	ret = kdbus_args_parse(&args, argp, &cmd);
 	if (ret != 0)
