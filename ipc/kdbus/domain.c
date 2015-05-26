@@ -20,6 +20,7 @@
 #include <linux/sizes.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/security.h>
 
 #include "bus.h"
 #include "domain.h"
@@ -73,6 +74,7 @@ static void kdbus_domain_free(struct kdbus_node *node)
 	put_user_ns(domain->user_namespace);
 	ida_destroy(&domain->user_ida);
 	idr_destroy(&domain->user_idr);
+	security_kdbus_domain_free(domain);
 	kfree(domain);
 }
 
@@ -104,6 +106,10 @@ struct kdbus_domain *kdbus_domain_new(unsigned int access)
 	idr_init(&d->user_idr);
 	ida_init(&d->user_ida);
 
+	ret = security_kdbus_domain_alloc(d);
+	if (ret)
+		return ERR_PTR(ret);
+
 	/* Pin user namespace so we can guarantee domain-unique bus * names. */
 	d->user_namespace = get_user_ns(current_user_ns());
 
@@ -116,6 +122,7 @@ struct kdbus_domain *kdbus_domain_new(unsigned int access)
 exit_unref:
 	kdbus_node_deactivate(&d->node);
 	kdbus_node_unref(&d->node);
+	security_kdbus_domain_free(d);
 	return ERR_PTR(ret);
 }
 
@@ -265,6 +272,7 @@ static void __kdbus_user_free(struct kref *kref)
 		idr_remove(&user->domain->user_idr, __kuid_val(user->uid));
 	mutex_unlock(&user->domain->lock);
 
+	security_kdbus_domain_free(user->domain);
 	kdbus_domain_unref(user->domain);
 	kfree(user);
 }
