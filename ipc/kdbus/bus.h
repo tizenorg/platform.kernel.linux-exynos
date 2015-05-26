@@ -53,6 +53,7 @@ struct kdbus_user;
  * @notify_list:	List of pending kernel-generated messages
  * @notify_lock:	Notification list lock
  * @notify_flush_lock:	Notification flushing lock
+ * @security:		LSM security blob
  */
 struct kdbus_bus {
 	struct kdbus_node node;
@@ -81,6 +82,10 @@ struct kdbus_bus {
 	struct list_head notify_list;
 	spinlock_t notify_lock;
 	struct mutex notify_flush_lock;
+
+#ifdef CONFIG_SECURITY
+	void *security;
+#endif
 };
 
 struct kdbus_bus *kdbus_bus_ref(struct kdbus_bus *bus);

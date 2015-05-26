@@ -31,6 +31,7 @@
  * @user_ida:		Set of all users to compute small indices
  * @user_namespace:	User namespace, pinned at creation time
  * @dentry:		Root dentry of VFS mount (don't use outside of kdbusfs)
+ * @security:		LSM security blob
  */
 struct kdbus_domain {
 	struct kdbus_node node;
@@ -40,6 +41,9 @@ struct kdbus_domain {
 	struct ida user_ida;
 	struct user_namespace *user_namespace;
 	struct dentry *dentry;
+#ifdef CONFIG_SECURITY
+	void *security;
+#endif
 };
 
 /**
