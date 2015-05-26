@@ -22,6 +22,7 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/uio.h>
+#include <linux/security.h>
 
 #include "bus.h"
 #include "notify.h"
@@ -51,6 +52,7 @@ static void kdbus_bus_free(struct kdbus_node *node)
 	kdbus_domain_unref(bus->domain);
 	kdbus_policy_db_clear(&bus->policy_db);
 	kdbus_meta_proc_unref(bus->creator_meta);
+	security_kdbus_bus_free(bus);
 	kfree(bus);
 }
 
@@ -161,6 +163,12 @@ static struct kdbus_bus *kdbus_bus_new(struct kdbus_domain *domain,
 		goto exit_unref;
 	}
 
+	ret = security_kdbus_bus_alloc(b);
+	if (ret) {
+		ret = -EPERM;
+		goto exit_unref;
+	}
+
 	/*
 	 * Bus-limits of the creator are accounted on its real UID, just like
 	 * all other per-user limits.
@@ -169,11 +177,13 @@ static struct kdbus_bus *kdbus_bus_new(struct kdbus_domain *domain,
 	if (IS_ERR(b->creator)) {
 		ret = PTR_ERR(b->creator);
 		b->creator = NULL;
-		goto exit_unref;
+		goto exit_free_security;
 	}
 
 	return b;
 
+exit_free_security:
+	security_kdbus_bus_free(b);
 exit_unref:
 	kdbus_node_deactivate(&b->node);
 	kdbus_node_unref(&b->node);
