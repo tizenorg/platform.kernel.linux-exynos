@@ -595,6 +595,79 @@ static int cap_sem_semop(struct sem_array *sma, struct sembuf *sops,
 	return 0;
 }
 
+static int cap_kdbus_domain_alloc(struct kdbus_domain *domain)
+{
+	return 0;
+}
+
+static void cap_kdbus_domain_free(struct kdbus_domain *domain)
+{
+}
+
+static int cap_kdbus_bus_alloc(struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static void cap_kdbus_bus_free(struct kdbus_bus *bus)
+{
+}
+
+static int cap_kdbus_send(const struct kdbus_conn *conn,
+			  const struct kdbus_bus *bus)
+
+{
+	return 0;
+}
+
+static int cap_kdbus_recv(const struct kdbus_conn *conn,
+			  const struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static int cap_kdbus_name_acquire(const struct kdbus_conn *conn,
+				  const char *name)
+{
+	return 0;
+}
+
+static int cap_kdbus_name_list(const struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static int cap_kdbus_ep_create(const struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static int cap_kdbus_ep_setpolicy(const struct kdbus_bus *bus)
+{
+	return 0;
+}
+
+static int cap_kdbus_connect(struct kdbus_conn *conn,
+			     const char *secctx, u32 seclen)
+{
+	return 0;
+}
+
+static int cap_kdbus_conn_info(const struct kdbus_conn *conn)
+{
+	return 0;
+}
+
+static void cap_kdbus_conn_free(struct kdbus_conn *conn)
+{
+}
+
+static int cap_kdbus_talk(const struct kdbus_conn *src,
+			  const struct kdbus_conn *dst)
+{
+	return 0;
+}
+
 #ifdef CONFIG_SECURITY_NETWORK
 static int cap_unix_stream_connect(struct sock *sock, struct sock *other,
 				   struct sock *newsk)
@@ -1097,6 +1170,20 @@ void __init security_fixup_ops(struct security_operations *ops)
 	set_to_cap_if_null(ops, inode_notifysecctx);
 	set_to_cap_if_null(ops, inode_setsecctx);
 	set_to_cap_if_null(ops, inode_getsecctx);
+	set_to_cap_if_null(ops, kdbus_domain_alloc);
+	set_to_cap_if_null(ops, kdbus_domain_free);
+	set_to_cap_if_null(ops, kdbus_bus_alloc);
+	set_to_cap_if_null(ops, kdbus_bus_free);
+	set_to_cap_if_null(ops, kdbus_send);
+	set_to_cap_if_null(ops, kdbus_recv);
+	set_to_cap_if_null(ops, kdbus_name_acquire);
+	set_to_cap_if_null(ops, kdbus_name_list);
+	set_to_cap_if_null(ops, kdbus_ep_create);
+	set_to_cap_if_null(ops, kdbus_ep_setpolicy);
+	set_to_cap_if_null(ops, kdbus_connect);
+	set_to_cap_if_null(ops, kdbus_conn_free);
+	set_to_cap_if_null(ops, kdbus_conn_info);
+	set_to_cap_if_null(ops, kdbus_talk);
 #ifdef CONFIG_SECURITY_NETWORK
 	set_to_cap_if_null(ops, unix_stream_connect);
 	set_to_cap_if_null(ops, unix_may_send);
