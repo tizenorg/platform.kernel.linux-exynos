@@ -24,6 +24,7 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/uio.h>
+#include <linux/security.h>
 
 #include "bus.h"
 #include "connection.h"
@@ -503,6 +504,12 @@ int kdbus_cmd_name_acquire(struct kdbus_conn *conn, void __user *argp)
 		goto exit;
 	}
 
+	ret = security_kdbus_name_acquire(conn, item_name);
+	if (ret) {
+		ret = -EPERM;
+		goto exit;
+	}
+
 	/*
 	 * Do atomic_inc_return here to reserve our slot, then decrement
 	 * it before returning.
@@ -725,6 +732,10 @@ int kdbus_cmd_list(struct kdbus_conn *conn, void __user *argp)
 	ret = kdbus_args_parse(&args, argp, &cmd);
 	if (ret != 0)
 		return ret;
+
+	ret = security_kdbus_name_list(conn->ep->bus);
+	if (ret)
+		return -EPERM;
 
 	/* lock order: domain -> bus -> ep -> names -> conn */
 	down_read(&reg->rwlock);
