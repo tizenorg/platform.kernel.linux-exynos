@@ -601,11 +601,18 @@ static struct drm_exynos_ipp_mem_node
 	}
 
 	mutex_lock(&c_node->mem_lock);
-	if (ipp_validate_mem_node(drm_dev, m_node, c_node)) {
-		ipp_put_mem_node(drm_dev, c_node, m_node);
-		mutex_unlock(&c_node->mem_lock);
-		return ERR_PTR(-EFAULT);
-	}
+	/*
+	 * This validation function needs to be modified, because there are
+	 * cases which the GSC driver calculates the offsets for planes with
+	 * one GEM handle.
+	 */
+	/*
+	   if (ipp_validate_mem_node(drm_dev, m_node, c_node)) {
+	   ipp_put_mem_node(drm_dev, c_node, m_node);
+	   mutex_unlock(&c_node->mem_lock);
+	   return ERR_PTR(-EFAULT);
+	   }
+	 */
 	list_add_tail(&m_node->list, &c_node->mem_list[qbuf->ops_id]);
 	mutex_unlock(&c_node->mem_lock);
 
