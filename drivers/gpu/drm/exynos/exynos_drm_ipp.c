@@ -482,8 +482,8 @@ static int ipp_validate_mem_node(struct drm_device *drm_dev,
 {
 	struct drm_exynos_ipp_config *ipp_cfg;
 	unsigned int num_plane;
-	unsigned long min_size, size;
-	unsigned int bpp;
+	unsigned long size, buf_size, plane_size, img_size;
+	unsigned int bpp2;
 	int i;
 
 	ipp_cfg = &c_node->property.config[m_node->ops_id];
@@ -496,21 +496,27 @@ static int ipp_validate_mem_node(struct drm_device *drm_dev,
 	 * This is not the best that can be done
 	 * but it seems more than enough
 	 */
+	buf_size = 0;
+	img_size = 0;
 	for (i = 0; i < num_plane; ++i) {
-		if (!m_node->buf_info.handles[i]) {
-			DRM_ERROR("invalid handle for plane %d\n", i);
-			return -EINVAL;
-		}
-		bpp = drm_format_plane_cpp(ipp_cfg->fmt, i);
-		min_size = (ipp_cfg->sz.hsize * ipp_cfg->sz.vsize * bpp) >> 3;
-		size = exynos_drm_gem_get_size(drm_dev,
-					       m_node->buf_info.handles[i],
-					       c_node->filp);
-		if (min_size > size) {
-			DRM_ERROR("invalid size for plane %d\n", i);
-			return -EINVAL;
+		bpp2 = drm_format_plane_2bpp(ipp_cfg->fmt, i);
+		plane_size = (ipp_cfg->sz.hsize * ipp_cfg->sz.vsize * bpp2) >> 4;
+		img_size += plane_size;
+
+		if (m_node->buf_info.handles[i]) {
+			size = exynos_drm_gem_get_size(drm_dev,
+					m_node->buf_info.handles[i],
+					c_node->filp);
+			if (plane_size > size)
+				return -EINVAL;
+
+			buf_size += size;
 		}
 	}
+
+	if (buf_size < img_size)
+		return -EINVAL;
+
 	return 0;
 }
 
