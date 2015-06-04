@@ -5218,6 +5218,62 @@ int drm_format_num_planes(uint32_t format)
 EXPORT_SYMBOL(drm_format_num_planes);
 
 /**
+ * drm_format_plane_2bpp - get the 2 times of the bits per pixel of nth plane
+ * @format: pixel format (DRM_FORMAT_*)
+ * @plane: plane index
+ *
+ * DRM_FORMAT_YUV410 uses 0.5 bit per a pixel for its chroma planes. For not
+ * using floating point number as return value, this function multiply bpp of
+ * a plane by 2 before return it.
+ *
+ * Returns:
+ * 2 times of the bits per pixel for the specified plane
+ */
+int drm_format_plane_2bpp(uint32_t format, int plane)
+{
+	unsigned int depth;
+	int bpp;
+
+	if (plane >= drm_format_num_planes(format))
+		return 0;
+
+	switch (format) {
+	case DRM_FORMAT_YUYV:
+	case DRM_FORMAT_YVYU:
+	case DRM_FORMAT_UYVY:
+	case DRM_FORMAT_VYUY:
+		return 32;
+	case DRM_FORMAT_NV12:
+	case DRM_FORMAT_NV21:
+		return plane ? 4 : 16;
+	case DRM_FORMAT_NV16:
+	case DRM_FORMAT_NV61:
+		return plane ? 8 : 16;
+	case DRM_FORMAT_NV24:
+	case DRM_FORMAT_NV42:
+		return plane ? 32 : 16;
+	case DRM_FORMAT_YUV410:
+	case DRM_FORMAT_YVU410:
+		return plane ? 1 : 16;
+	case DRM_FORMAT_YUV411:
+	case DRM_FORMAT_YVU411:
+	case DRM_FORMAT_YUV420:
+	case DRM_FORMAT_YVU420:
+		return plane ? 4 : 16;
+	case DRM_FORMAT_YUV422:
+	case DRM_FORMAT_YVU422:
+		return plane ? 8 : 16;
+	case DRM_FORMAT_YUV444:
+	case DRM_FORMAT_YVU444:
+		return 16;
+	default:
+		drm_fb_get_bpp_depth(format, &depth, &bpp);
+		return bpp * 2;
+	}
+}
+EXPORT_SYMBOL(drm_format_plane_2bpp);
+
+/**
  * drm_format_plane_cpp - determine the bytes per pixel value
  * @format: pixel format (DRM_FORMAT_*)
  * @plane: plane index
