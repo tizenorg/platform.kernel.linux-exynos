@@ -21,6 +21,73 @@
 #include <linux/export.h>
 #include <trace/events/asoc.h>
 
+enum extcon_cable_name jack_extcon_types[] = {
+	EXTCON_HEADPHONE_OUT,
+	EXTCON_MIC_IN,
+	EXTCON_LINE_OUT,
+	EXTCON_MECHANICAL,
+	EXTCON_VIDEO_OUT,
+	EXTCON_LINE_IN,
+};
+
+static int snd_soc_jack_extcon_new(struct snd_soc_codec *codec,
+				   const char *id, int type,
+				   struct snd_soc_jack *jack)
+{
+	int ret, i, count = 0;
+
+	for (i = 0; i < ARRAY_SIZE(jack_extcon_types); i++)
+		if (type & (1 << i))
+			count++;
+
+	jack->extcon_cable = kcalloc(count, sizeof(char *), GFP_KERNEL);
+	if (!jack->extcon_cable)
+		return -ENOMEM;
+
+	for (i = 0, count = 0; i < ARRAY_SIZE(jack_extcon_types); i++)
+		if (type & (1 << i))
+			jack->extcon_cable[count++] =
+				extcon_cable_name[jack_extcon_types[i]];
+
+	jack->extcon_cable[count] = NULL;
+
+	jack->edev = devm_extcon_dev_allocate(codec->dev,
+					      jack->extcon_cable);
+	if (IS_ERR(jack->edev)) {
+		dev_err(codec->dev, "failed to allocate extcon device\n");
+		kfree(jack->extcon_cable);
+		return -ENOMEM;
+	}
+
+	jack->edev->name = kstrdup(id, GFP_KERNEL);
+
+	ret = devm_extcon_dev_register(codec->dev, jack->edev);
+	if (ret < 0) {
+		dev_err(codec->dev, "extcon_dev_register() failed: %d\n",
+			ret);
+		kfree(jack->extcon_cable);
+		return ret;
+	}
+
+	return 0;
+}
+
+static void snd_soc_jack_extcon_report(struct extcon_dev *edev, int status)
+{
+	int i;
+
+	if (!edev)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(jack_extcon_types); i++) {
+		int testbit = 1 << i;
+		int index = extcon_find_cable_index(edev,
+				extcon_cable_name[jack_extcon_types[i]]);
+		if (index >= 0)
+			extcon_set_cable_state_(edev, index, status & testbit);
+	}
+}
+
 /**
  * snd_soc_jack_new - Create a new jack
  * @codec: ASoC codec
@@ -42,6 +109,8 @@ int snd_soc_jack_new(struct snd_soc_codec *codec, const char *id, int type,
 	INIT_LIST_HEAD(&jack->pins);
 	INIT_LIST_HEAD(&jack->jack_zones);
 	BLOCKING_INIT_NOTIFIER_HEAD(&jack->notifier);
+
+	snd_soc_jack_extcon_new(codec, id, type, jack);
 
 	return snd_jack_new(codec->component.card->snd_card, id, type, &jack->jack);
 }
@@ -104,6 +173,8 @@ void snd_soc_jack_report(struct snd_soc_jack *jack, int status, int mask)
 
 	if (sync)
 		snd_soc_dapm_sync(dapm);
+
+	snd_soc_jack_extcon_report(jack->edev, jack->status);
 
 	snd_jack_report(jack->jack, jack->status);
 

@@ -22,6 +22,7 @@
 #include <linux/kernel.h>
 #include <linux/regmap.h>
 #include <linux/log2.h>
+#include <linux/extcon.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/compress_driver.h>
@@ -664,6 +665,8 @@ struct snd_soc_jack {
 	int status;
 	struct blocking_notifier_head notifier;
 	struct list_head jack_zones;
+	struct extcon_dev *edev;
+	const char **extcon_cable;
 };
 
 /* SoC PCM stream information */
