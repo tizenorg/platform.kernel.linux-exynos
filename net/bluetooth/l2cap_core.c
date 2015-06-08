@@ -43,6 +43,28 @@
 
 #define LE_FLOWCTL_MAX_CREDITS 65535
 
+#ifdef CONFIG_TIZEN_WIP
+#ifndef list_next_entry
+#define list_next_entry(pos, member) \
+	list_entry((pos)->member.next, typeof(*(pos)), member)
+#endif
+#endif
+
+#ifdef CONFIG_TIZEN_WIP
+/* #define HCI_BROADCOMM_QOS_PATCH */
+#endif
+#ifdef HCI_BROADCOMM_QOS_PATCH
+#define L2CAP_PSM_AVDTP 25
+#define HCI_BROADCOM_QOS_CMD 0xFC57  /* For bcm4329/bcm4330/bcm4334 chipsets */
+#define PRIORITY_NORMAL 0x00 /* Broadcom ACL priority for bcm4334 chipset */
+#define PRIORITY_HIGH 0x01
+
+struct hci_cp_broadcom_cmd {
+	__le16   handle;
+	__u8     priority; /* Only for bcm4330/bcm4334 chipsets */
+} __attribute__ ((__packed__));
+#endif
+
 bool disable_ertm;
 
 static u32 l2cap_feat_mask = L2CAP_FEAT_FIXED_CHAN | L2CAP_FEAT_UCD;
@@ -2132,9 +2154,7 @@ static inline int l2cap_skbuff_fromiovec(struct l2cap_chan *chan,
 			return PTR_ERR(tmp);
 
 		*frag = tmp;
-
-		if (copy_from_iter(skb_put(*frag, count), count,
-				   &msg->msg_iter) != count)
+		if (copy_from_iter(skb_put(skb, count), count, &msg->msg_iter) != count)
 			return -EFAULT;
 
 		sent += count;
@@ -3666,6 +3686,20 @@ void __l2cap_connect_rsp_defer(struct l2cap_chan *chan)
 
 	if (test_and_set_bit(CONF_REQ_SENT, &chan->conf_state))
 		return;
+	/* BEGIN SLP_Bluetooth :: fix av chopping issue. */
+#ifdef HCI_BROADCOMM_QOS_PATCH
+	/* To gurantee the A2DP packet*/
+	if (chan->psm == L2CAP_PSM_AVDTP) {
+		struct hci_cp_broadcom_cmd cp;
+
+		cp.handle = cpu_to_le16(conn->hcon->handle);
+		cp.priority = PRIORITY_HIGH;
+
+		hci_send_cmd(conn->hcon->hdev, HCI_BROADCOM_QOS_CMD,
+				sizeof(cp), &cp);
+	}
+#endif
+	/* END SLP_Bluetooth */
 
 	l2cap_send_cmd(conn, l2cap_get_ident(conn), L2CAP_CONF_REQ,
 		       l2cap_build_conf_req(chan, buf), buf);
@@ -3952,6 +3986,20 @@ static int l2cap_connect_create_rsp(struct l2cap_conn *conn,
 
 		if (test_and_set_bit(CONF_REQ_SENT, &chan->conf_state))
 			break;
+
+		/* BEGIN SLP_Bluetooth :: fix av chopping issue. */
+#ifdef HCI_BROADCOMM_QOS_PATCH
+		/* To gurantee the A2DP packet*/
+		if (chan->psm == L2CAP_PSM_AVDTP) {
+			struct hci_cp_broadcom_cmd cp;
+			cp.handle = cpu_to_le16(conn->hcon->handle);
+			cp.priority = PRIORITY_HIGH;
+
+			hci_send_cmd(conn->hcon->hdev, HCI_BROADCOM_QOS_CMD,
+					sizeof(cp), &cp);
+		}
+#endif
+		/* END SLP_Bluetooth */
 
 		l2cap_send_cmd(conn, l2cap_get_ident(conn), L2CAP_CONF_REQ,
 			       l2cap_build_conf_req(chan, req), req);
@@ -4314,6 +4362,23 @@ static inline int l2cap_disconnect_rsp(struct l2cap_conn *conn,
 	l2cap_chan_unlock(chan);
 
 	chan->ops->close(chan);
+
+	/* BEGIN SLP_Bluetooth :: fix av chopping issue. */
+#ifdef HCI_BROADCOMM_QOS_PATCH
+	/* To reset the QOS back to normal */
+
+	if (chan->psm == L2CAP_PSM_AVDTP) {
+		struct hci_cp_broadcom_cmd cp;
+
+		cp.handle = cpu_to_le16(conn->hcon->handle);
+		cp.priority = PRIORITY_NORMAL;
+
+		hci_send_cmd(conn->hcon->hdev, HCI_BROADCOM_QOS_CMD,
+					sizeof(cp), &cp);
+	}
+#endif
+	/* END SLP_Bluetooth */
+
 	l2cap_chan_put(chan);
 
 	mutex_unlock(&conn->chan_lock);
