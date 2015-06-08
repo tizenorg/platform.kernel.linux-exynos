@@ -511,12 +511,13 @@ static int bnep_session(void *arg)
 
 static struct device *bnep_get_device(struct bnep_session *session)
 {
-	struct l2cap_conn *conn = l2cap_pi(session->sock->sk)->chan->conn;
+	struct hci_conn *conn;
 
-	if (!conn || !conn->hcon)
+	conn = l2cap_pi(session->sock->sk)->chan->conn->hcon;
+	if (!conn)
 		return NULL;
 
-	return &conn->hcon->dev;
+	return &conn->dev;
 }
 
 static struct device_type bnep_type = {
@@ -539,10 +540,16 @@ int bnep_add_connection(struct bnep_connadd_req *req, struct socket *sock)
 	baswap((void *) src, &l2cap_pi(sock->sk)->chan->src);
 
 	/* session struct allocated as private part of net_device */
+#ifdef CONFIG_TIZEN_WIP
+	dev = alloc_netdev(sizeof(struct bnep_session),
+				(*req->device) ? req->device : "bnep%d",
+				bnep_net_setup);
+#else
 	dev = alloc_netdev(sizeof(struct bnep_session),
 			   (*req->device) ? req->device : "bnep%d",
 			   NET_NAME_UNKNOWN,
 			   bnep_net_setup);
+#endif
 	if (!dev)
 		return -ENOMEM;
 

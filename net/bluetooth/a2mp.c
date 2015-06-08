@@ -59,9 +59,7 @@ void a2mp_send(struct amp_mgr *mgr, u8 code, u8 ident, u16 len, void *data)
 	iv.iov_len = total_len;
 
 	memset(&msg, 0, sizeof(msg));
-
 	iov_iter_kvec(&msg.msg_iter, WRITE | ITER_KVEC, &iv, 1, total_len);
-
 	l2cap_chan_send(chan, &msg, total_len);
 
 	kfree(cmd);

@@ -56,6 +56,23 @@ DEFINE_RWLOCK(hci_cb_list_lock);
 /* HCI ID Numbering */
 static DEFINE_IDA(hci_index_ida);
 
+
+/* ---- HCI notifications ---- */
+
+#ifdef CONFIG_TIZEN_WIP
+static ATOMIC_NOTIFIER_HEAD(hci_notifier);
+
+int hci_register_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&hci_notifier, nb);
+}
+
+int hci_unregister_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&hci_notifier, nb);
+}
+#endif
+
 /* ----- HCI requests ----- */
 
 #define HCI_REQ_DONE	  0
@@ -70,6 +87,11 @@ static DEFINE_IDA(hci_index_ida);
 static void hci_notify(struct hci_dev *hdev, int event)
 {
 	hci_sock_dev_event(hdev, event);
+#ifdef CONFIG_TIZEN_WIP
+	if (event == HCI_DEV_REG || event == HCI_DEV_UNREG
+			|| event == HCI_DEV_WRITE)
+		atomic_notifier_call_chain(&hci_notifier, event, hdev);
+#endif
 }
 
 /* ---- HCI debugfs entries ---- */
@@ -870,14 +892,18 @@ static void hci_init4_req(struct hci_request *req, unsigned long opt)
 	if (lmp_sync_train_capable(hdev))
 		hci_req_add(req, HCI_OP_READ_SYNC_TRAIN_PARAMS, 0, NULL);
 
+/* Disable Secure connection implementation now */
+#ifdef CONFIG_TIZEN_WIP
 	/* Enable Secure Connections if supported and configured */
-	if (test_bit(HCI_SSP_ENABLED, &hdev->dev_flags) &&
-	    bredr_sc_enabled(hdev)) {
+	if ((lmp_sc_capable(hdev) ||
+	     test_bit(HCI_FORCE_BREDR_SMP, &hdev->dbg_flags)) &&
+	    test_bit(HCI_SC_ENABLED, &hdev->dev_flags)) {
 		u8 support = 0x01;
 
 		hci_req_add(req, HCI_OP_WRITE_SC_SUPPORT,
 			    sizeof(support), &support);
 	}
+#endif
 }
 
 static int __hci_init(struct hci_dev *hdev)
@@ -1081,6 +1107,51 @@ void hci_discovery_set_state(struct hci_dev *hdev, int state)
 		break;
 	}
 }
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Seperate LE discovery */
+bool hci_le_discovery_active(struct hci_dev *hdev)
+{
+	struct discovery_state *discov = &hdev->le_discovery;
+
+	switch (discov->state) {
+	case DISCOVERY_FINDING:
+	case DISCOVERY_RESOLVING:
+		return true;
+
+	default:
+		return false;
+	}
+}
+
+void hci_le_discovery_set_state(struct hci_dev *hdev, int state)
+{
+	BT_DBG("%s state %u -> %u", hdev->name, hdev->le_discovery.state, state);
+
+	if (hdev->le_discovery.state == state)
+		return;
+
+	switch (state) {
+	case DISCOVERY_STOPPED:
+		hci_update_background_scan(hdev);
+
+		if (hdev->le_discovery.state != DISCOVERY_STARTING)
+			mgmt_le_discovering(hdev, 0);
+		break;
+	case DISCOVERY_STARTING:
+		break;
+	case DISCOVERY_FINDING:
+		mgmt_le_discovering(hdev, 1);
+		break;
+	case DISCOVERY_RESOLVING:
+		break;
+	case DISCOVERY_STOPPING:
+		break;
+	}
+
+	hdev->le_discovery.state = state;
+}
+/* END TIZEN_Bluetooth */
+#endif
 
 void hci_inquiry_cache_flush(struct hci_dev *hdev)
 {
@@ -1273,6 +1344,14 @@ static void hci_inq_req(struct hci_request *req, unsigned long opt)
 	cp.num_rsp = ir->num_rsp;
 	hci_req_add(req, HCI_OP_INQUIRY, sizeof(cp), &cp);
 }
+
+#ifdef CONFIG_TIZEN_WIP
+static int wait_inquiry(void *word)
+{
+	schedule();
+	return signal_pending(current);
+}
+#endif
 
 int hci_inquiry(void __user *arg)
 {
@@ -1617,7 +1696,6 @@ static int hci_dev_do_close(struct hci_dev *hdev)
 		cancel_delayed_work(&hdev->service_cache);
 
 	cancel_delayed_work_sync(&hdev->le_scan_disable);
-	cancel_delayed_work_sync(&hdev->le_scan_restart);
 
 	if (test_bit(HCI_MGMT, &hdev->dev_flags))
 		cancel_delayed_work_sync(&hdev->rpa_expired);
@@ -1629,8 +1707,6 @@ static int hci_dev_do_close(struct hci_dev *hdev)
 
 	hci_dev_lock(hdev);
 
-	hci_discovery_set_state(hdev, DISCOVERY_STOPPED);
-
 	if (!test_and_clear_bit(HCI_AUTO_OFF, &hdev->dev_flags)) {
 		if (hdev->dev_type == HCI_BREDR)
 			mgmt_powered(hdev, 0);
@@ -1640,8 +1716,6 @@ static int hci_dev_do_close(struct hci_dev *hdev)
 	hci_pend_le_actions_clear(hdev);
 	hci_conn_hash_flush(hdev);
 	hci_dev_unlock(hdev);
-
-	smp_unregister(hdev);
 
 	hci_notify(hdev, HCI_DEV_DOWN);
 
@@ -1722,13 +1796,31 @@ done:
 	return err;
 }
 
-static int hci_dev_do_reset(struct hci_dev *hdev)
+int hci_dev_reset(__u16 dev)
 {
-	int ret;
+	struct hci_dev *hdev;
+	int ret = 0;
 
-	BT_DBG("%s %p", hdev->name, hdev);
+	hdev = hci_dev_get(dev);
+	if (!hdev)
+		return -ENODEV;
 
 	hci_req_lock(hdev);
+
+	if (!test_bit(HCI_UP, &hdev->flags)) {
+		ret = -ENETDOWN;
+		goto done;
+	}
+
+	if (test_bit(HCI_USER_CHANNEL, &hdev->dev_flags)) {
+		ret = -EBUSY;
+		goto done;
+	}
+
+	if (test_bit(HCI_UNCONFIGURED, &hdev->dev_flags)) {
+		ret = -EOPNOTSUPP;
+		goto done;
+	}
 
 	/* Drop queues */
 	skb_queue_purge(&hdev->rx_q);
@@ -1752,39 +1844,10 @@ static int hci_dev_do_reset(struct hci_dev *hdev)
 
 	ret = __hci_req_sync(hdev, hci_reset_req, 0, HCI_INIT_TIMEOUT);
 
-	hci_req_unlock(hdev);
-	return ret;
-}
-
-int hci_dev_reset(__u16 dev)
-{
-	struct hci_dev *hdev;
-	int err;
-
-	hdev = hci_dev_get(dev);
-	if (!hdev)
-		return -ENODEV;
-
-	if (!test_bit(HCI_UP, &hdev->flags)) {
-		err = -ENETDOWN;
-		goto done;
-	}
-
-	if (test_bit(HCI_USER_CHANNEL, &hdev->dev_flags)) {
-		err = -EBUSY;
-		goto done;
-	}
-
-	if (test_bit(HCI_UNCONFIGURED, &hdev->dev_flags)) {
-		err = -EOPNOTSUPP;
-		goto done;
-	}
-
-	err = hci_dev_do_reset(hdev);
-
 done:
+	hci_req_unlock(hdev);
 	hci_dev_put(hdev);
-	return err;
+	return ret;
 }
 
 int hci_dev_reset_stat(__u16 dev)
@@ -2150,24 +2213,8 @@ static void hci_power_off(struct work_struct *work)
 	BT_DBG("%s", hdev->name);
 
 	hci_dev_do_close(hdev);
-}
 
-static void hci_error_reset(struct work_struct *work)
-{
-	struct hci_dev *hdev = container_of(work, struct hci_dev, error_reset);
-
-	BT_DBG("%s", hdev->name);
-
-	if (hdev->hw_error)
-		hdev->hw_error(hdev, hdev->hw_error_code);
-	else
-		BT_ERR("%s hardware error 0x%2.2x", hdev->name,
-		       hdev->hw_error_code);
-
-	if (hci_dev_do_close(hdev))
-		return;
-
-	hci_dev_do_open(hdev);
+	smp_unregister(hdev);
 }
 
 static void hci_discov_off(struct work_struct *work)
@@ -2272,6 +2319,11 @@ static bool hci_persistent_key(struct hci_dev *hdev, struct hci_conn *conn,
 	if (conn->remote_auth == 0x02 || conn->remote_auth == 0x03)
 		return true;
 
+#ifdef CONFIG_TIZEN_WIP
+	/* In case of auth_type '0x01'. It is authenticated by MITM, so store it */
+	if (key_type == HCI_LK_AUTH_COMBINATION_P192)
+		return true;
+#endif
 	/* If none of the above criteria match, then don't store the key
 	 * persistently */
 	return false;
@@ -2500,6 +2552,16 @@ void hci_remove_irk(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 addr_type)
 	}
 }
 
+#ifdef CONFIG_TIZEN_WIP
+/* Timeout Error Event is being handled */
+static void hci_tx_timeout_error_evt(struct hci_dev *hdev)
+{
+	BT_ERR("%s H/W TX Timeout error", hdev->name);
+
+	mgmt_tx_timeout_error(hdev);
+}
+#endif
+
 /* HCI command timer function */
 static void hci_cmd_timeout(struct work_struct *work)
 {
@@ -2515,6 +2577,9 @@ static void hci_cmd_timeout(struct work_struct *work)
 		BT_ERR("%s command tx timeout", hdev->name);
 	}
 
+#ifdef CONFIG_TIZEN_WIP
+	hci_tx_timeout_error_evt(hdev);
+#endif
 	atomic_set(&hdev->cmd_cnt, 1);
 	queue_work(hdev->workqueue, &hdev->cmd_work);
 }
@@ -2582,15 +2647,9 @@ int hci_add_remote_oob_data(struct hci_dev *hdev, bdaddr_t *bdaddr,
 	if (hash192 && rand192) {
 		memcpy(data->hash192, hash192, sizeof(data->hash192));
 		memcpy(data->rand192, rand192, sizeof(data->rand192));
-		if (hash256 && rand256)
-			data->present = 0x03;
 	} else {
 		memset(data->hash192, 0, sizeof(data->hash192));
 		memset(data->rand192, 0, sizeof(data->rand192));
-		if (hash256 && rand256)
-			data->present = 0x02;
-		else
-			data->present = 0x00;
 	}
 
 	if (hash256 && rand256) {
@@ -2599,8 +2658,6 @@ int hci_add_remote_oob_data(struct hci_dev *hdev, bdaddr_t *bdaddr,
 	} else {
 		memset(data->hash256, 0, sizeof(data->hash256));
 		memset(data->rand256, 0, sizeof(data->rand256));
-		if (hash192 && rand192)
-			data->present = 0x01;
 	}
 
 	BT_DBG("%s for %pMR", hdev->name, bdaddr);
@@ -2831,8 +2888,6 @@ static void le_scan_disable_work_complete(struct hci_dev *hdev, u8 status,
 		return;
 	}
 
-	hdev->discovery.scan_start = 0;
-
 	switch (hdev->discovery.type) {
 	case DISCOV_TYPE_LE:
 		hci_dev_lock(hdev);
@@ -2872,8 +2927,6 @@ static void le_scan_disable_work(struct work_struct *work)
 
 	BT_DBG("%s", hdev->name);
 
-	cancel_delayed_work_sync(&hdev->le_scan_restart);
-
 	hci_req_init(&req, hdev);
 
 	hci_req_add_le_scan_disable(&req);
@@ -2881,74 +2934,6 @@ static void le_scan_disable_work(struct work_struct *work)
 	err = hci_req_run(&req, le_scan_disable_work_complete);
 	if (err)
 		BT_ERR("Disable LE scanning request failed: err %d", err);
-}
-
-static void le_scan_restart_work_complete(struct hci_dev *hdev, u8 status,
-					  u16 opcode)
-{
-	unsigned long timeout, duration, scan_start, now;
-
-	BT_DBG("%s", hdev->name);
-
-	if (status) {
-		BT_ERR("Failed to restart LE scan: status %d", status);
-		return;
-	}
-
-	if (!test_bit(HCI_QUIRK_STRICT_DUPLICATE_FILTER, &hdev->quirks) ||
-	    !hdev->discovery.scan_start)
-		return;
-
-	/* When the scan was started, hdev->le_scan_disable has been queued
-	 * after duration from scan_start. During scan restart this job
-	 * has been canceled, and we need to queue it again after proper
-	 * timeout, to make sure that scan does not run indefinitely.
-	 */
-	duration = hdev->discovery.scan_duration;
-	scan_start = hdev->discovery.scan_start;
-	now = jiffies;
-	if (now - scan_start <= duration) {
-		int elapsed;
-
-		if (now >= scan_start)
-			elapsed = now - scan_start;
-		else
-			elapsed = ULONG_MAX - scan_start + now;
-
-		timeout = duration - elapsed;
-	} else {
-		timeout = 0;
-	}
-	queue_delayed_work(hdev->workqueue,
-			   &hdev->le_scan_disable, timeout);
-}
-
-static void le_scan_restart_work(struct work_struct *work)
-{
-	struct hci_dev *hdev = container_of(work, struct hci_dev,
-					    le_scan_restart.work);
-	struct hci_request req;
-	struct hci_cp_le_set_scan_enable cp;
-	int err;
-
-	BT_DBG("%s", hdev->name);
-
-	/* If controller is not scanning we are done. */
-	if (!test_bit(HCI_LE_SCAN, &hdev->dev_flags))
-		return;
-
-	hci_req_init(&req, hdev);
-
-	hci_req_add_le_scan_disable(&req);
-
-	memset(&cp, 0, sizeof(cp));
-	cp.enable = LE_SCAN_ENABLE;
-	cp.filter_dup = LE_SCAN_FILTER_DUP_ENABLE;
-	hci_req_add(&req, HCI_OP_LE_SET_SCAN_ENABLE, sizeof(cp), &cp);
-
-	err = hci_req_run(&req, le_scan_restart_work_complete);
-	if (err)
-		BT_ERR("Restart LE scan request failed: err %d", err);
 }
 
 /* Copy the Identity Address of the controller.
@@ -3003,6 +2988,18 @@ struct hci_dev *hci_alloc_dev(void)
 	hdev->le_adv_channel_map = 0x07;
 	hdev->le_adv_min_interval = 0x0800;
 	hdev->le_adv_max_interval = 0x0800;
+
+#ifdef CONFIG_TIZEN_WIP
+	hdev->sniff_max_interval = 800;
+	hdev->sniff_min_interval = 400;
+
+	/* automatically enable sniff mode for connection */
+	hdev->idle_timeout = TIZEN_SNIFF_TIMEOUT * 1000; /* 2 Second */
+
+	hdev->adv_filter_policy = 0x00;
+	hdev->adv_type = 0x00;
+#endif
+	hdev->le_scan_type = LE_SCAN_PASSIVE;
 	hdev->le_scan_interval = 0x0060;
 	hdev->le_scan_window = 0x0030;
 	hdev->le_conn_min_interval = 0x0028;
@@ -3042,12 +3039,10 @@ struct hci_dev *hci_alloc_dev(void)
 	INIT_WORK(&hdev->cmd_work, hci_cmd_work);
 	INIT_WORK(&hdev->tx_work, hci_tx_work);
 	INIT_WORK(&hdev->power_on, hci_power_on);
-	INIT_WORK(&hdev->error_reset, hci_error_reset);
 
 	INIT_DELAYED_WORK(&hdev->power_off, hci_power_off);
 	INIT_DELAYED_WORK(&hdev->discov_off, hci_discov_off);
 	INIT_DELAYED_WORK(&hdev->le_scan_disable, le_scan_disable_work);
-	INIT_DELAYED_WORK(&hdev->le_scan_restart, le_scan_restart_work);
 
 	skb_queue_head_init(&hdev->rx_q);
 	skb_queue_head_init(&hdev->cmd_q);
@@ -3216,6 +3211,8 @@ void hci_unregister_dev(struct hci_dev *hdev)
 		rfkill_unregister(hdev->rfkill);
 		rfkill_destroy(hdev->rfkill);
 	}
+
+	smp_unregister(hdev);
 
 	device_del(&hdev->dev);
 
@@ -3487,6 +3484,10 @@ static void hci_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 
 	/* Get rid of skb owner, prior to sending to the driver. */
 	skb_orphan(skb);
+
+#ifdef CONFIG_TIZEN_WIP
+	hci_notify(hdev, HCI_DEV_WRITE);
+#endif
 
 	err = hdev->send(hdev, skb);
 	if (err < 0) {

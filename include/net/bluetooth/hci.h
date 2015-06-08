@@ -44,6 +44,9 @@
 #define HCI_DEV_DOWN			4
 #define HCI_DEV_SUSPEND			5
 #define HCI_DEV_RESUME			6
+#ifdef CONFIG_TIZEN_WIP
+#define HCI_DEV_WRITE			7
+#endif
 
 /* HCI notify events */
 #define HCI_NOTIFY_CONN_ADD		1
@@ -237,7 +240,11 @@ enum {
 #define HCI_DISCONN_TIMEOUT	msecs_to_jiffies(2000)	/* 2 seconds */
 #define HCI_PAIRING_TIMEOUT	msecs_to_jiffies(60000)	/* 60 seconds */
 #define HCI_INIT_TIMEOUT	msecs_to_jiffies(10000)	/* 10 seconds */
+#ifdef CONFIG_TIZEN_WIP
+#define HCI_CMD_TIMEOUT		msecs_to_jiffies(5000)	/* 5 seconds */
+#else
 #define HCI_CMD_TIMEOUT		msecs_to_jiffies(2000)	/* 2 seconds */
+#endif
 #define HCI_ACL_TX_TIMEOUT	msecs_to_jiffies(45000)	/* 45 seconds */
 #define HCI_AUTO_OFF_TIMEOUT	msecs_to_jiffies(2000)	/* 2 seconds */
 #define HCI_POWER_OFF_TIMEOUT	msecs_to_jiffies(5000)	/* 5 seconds */
@@ -455,6 +462,11 @@ enum {
 #define EIR_SSP_HASH_C		0x0E /* Simple Pairing Hash C */
 #define EIR_SSP_RAND_R		0x0F /* Simple Pairing Randomizer R */
 #define EIR_DEVICE_ID		0x10 /* device ID */
+#ifdef CONFIG_TIZEN_WIP
+#define EIR_SOLICIT_UUID16	0x14 /* 16-bit Solicitation UUID */
+#define EIR_MANUFACTURER_DATA	0XFF /*Manufacturer Specific Data*/
+#define EIR_GAP_APPEARANCE      0x19 /* GAP appearance */
+#endif
 
 /* Low Energy Advertising Flags */
 #define LE_AD_LIMITED		0x01 /* Limited Discoverable */
@@ -511,6 +523,31 @@ struct hci_cp_accept_conn_req {
 	bdaddr_t bdaddr;
 	__u8     role;
 } __packed;
+
+#ifdef CONFIG_TIZEN_WIP /* WBC/NBC feature */
+#define HCI_BCM_ENABLE_WBS_REQ		0xfc7e /* 0x3f7e */
+struct hci_cp_bcm_wbs_req {
+	__u8     role;
+	__le16   pkt_type;
+} __packed;
+
+#define HCI_BCM_I2C_PCM_REQ		0xfc6d /* 0x3f6d */
+struct hci_cp_i2c_pcm_req {
+	__u8     i2c_enable;
+	__u8     is_master;
+	__u8     pcm_rate;
+	__u8     clock_rate;
+} __packed;
+
+#define HCI_BCM_SCO_PCM_REQ		0xfc1c /* 0x3f1c */
+struct hci_cp_sco_pcm_req {
+	__u8     sco_routing;
+	__u8     pcm_rate;
+	__u8     frame_type;
+	__u8     sync_mode;
+	__u8   clock_mode;
+} __packed;
+#endif /* WBC/NBC feature */
 
 #define HCI_OP_REJECT_CONN_REQ		0x040a
 struct hci_cp_reject_conn_req {
@@ -941,6 +978,21 @@ struct hci_cp_host_buffer_size {
 	__le16   sco_max_pkt;
 } __packed;
 
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Set Link supervision timeout */
+#define HCI_OP_WRITE_LINK_SUPERVISION_TIMEOUT  0x0c37
+struct hci_cp_write_link_supervision_timeout {
+	__le16   handle;
+	__le16   timeout;
+} __packed;
+
+struct hci_rp_write_link_supervision_timeout {
+	__u8     status;
+	__le16   handle;
+} __packed;
+/* END TIZEN_Bluetooth */
+#endif
+
 #define HCI_OP_READ_NUM_SUPPORTED_IAC	0x0c38
 struct hci_rp_read_num_supported_iac {
 	__u8	status;
@@ -1295,6 +1347,22 @@ struct hci_cp_le_set_scan_param {
 	__u8    filter_policy;
 } __packed;
 
+#ifdef CONFIG_TIZEN_WIP
+#define HCI_OP_LE_CLEAR_DEV_WHITE_LIST	0x2010
+
+#define HCI_OP_LE_ADD_DEV_WHITE_LIST	0x2011
+struct hci_cp_le_add_dev_white_list {
+	__u8 bdaddr_type;
+	bdaddr_t bdaddr;
+} __packed;
+
+#define HCI_OP_LE_REMOVE_FROM_DEV_WHITE_LIST	0x2012
+struct hci_cp_le_remove_dev_from_white_list {
+	__u8 bdaddr_type;
+	bdaddr_t bdaddr;
+} __packed;
+#endif
+
 #define LE_SCAN_DISABLE			0x00
 #define LE_SCAN_ENABLE			0x01
 #define LE_SCAN_FILTER_DUP_DISABLE	0x00
@@ -1407,6 +1475,58 @@ struct hci_cp_le_conn_param_req_neg_reply {
 	__le16	handle;
 	__u8	reason;
 } __packed;
+
+#ifdef CONFIG_TIZEN_WIP
+/** Vendor Specific HCI Command
+ * Vendor: Broadcom
+ * Purpose: This HCI is used to enable RSSI monitoring and setting
+ * Threshold Values for LE Link
+ **/
+#define HCI_OP_ENABLE_RSSI		0xfce9
+
+struct hci_cp_set_enable_rssi {
+	__u8    hci_le_ext_opcode;
+	__u8    le_enable_cs_Features;
+	__u8    data[3];
+} __packed;
+
+struct hci_cp_set_rssi_threshold {
+	__u8    hci_le_ext_opcode;
+	__u8    mode;
+	__le16  conn_handle;
+	__u8    alert_mask;
+	__u8    low_th;
+	__u8    in_range_th;
+	__u8    high_th;
+} __packed;
+
+struct hci_cc_rsp_enable_rssi {
+	__u8     status;
+	__u8     le_ext_opcode;
+} __packed;
+
+struct hci_ev_vendor_specific_rssi_alert {
+	__le16   conn_handle ;
+	__s8     alert_type;
+	__s8     rssi_dbm;
+} __packed;
+
+/** Vendor Specific HCI Command
+ * Vendor: Broadcom
+ * Purpose: This HCI is used to get Raw RSSI value for a Link
+ **/
+#define HCI_OP_GET_RAW_RSSI		0xfc48
+
+struct hci_cp_get_raw_rssi {
+	__le16   conn_handle;
+} __packed;
+
+struct hci_cc_rp_get_raw_rssi {
+	__u8     status;
+	__le16   conn_handle;
+	__s8     rssi_dbm;
+} __packed;
+#endif
 
 #define HCI_OP_LE_SET_DATA_LEN		0x2022
 struct hci_cp_le_set_data_len {
@@ -1808,6 +1928,32 @@ struct hci_ev_sync_train_complete {
 } __packed;
 
 #define HCI_EV_SLAVE_PAGE_RESP_TIMEOUT	0x54
+
+#ifdef CONFIG_TIZEN_WIP
+/** Vendor Specific HCI Event
+ * Vendor: Broadcom
+ * Purpose: This HCI Event gives RSSI Alerts for monitored LE Link
+ **/
+#define HCI_EV_VENDOR_SPECIFIC		0xFF
+
+struct hci_ev_vendor_specific {
+	__u8     event_sub_code;
+} __packed;
+
+struct hci_ev_ext_vendor_specific {
+	__u8     event_le_ext_sub_code;
+} __packed;
+
+#define LE_META_VENDOR_SPECIFIC_GROUP_EVENT 0xE9
+#define LE_RSSI_LINK_ALERT 0x02
+
+#define LE_MULTI_ADV_STATE_CHANGE_SUB_EVENT 0x55
+struct hci_ev_vendor_specific_multi_adv_state {
+	__u8     adv_instance;
+	__u8     state_change_reason;
+	__le16     connection_handle;
+} __packed;
+#endif
 
 #define HCI_EV_LE_CONN_COMPLETE		0x01
 struct hci_ev_le_conn_complete {

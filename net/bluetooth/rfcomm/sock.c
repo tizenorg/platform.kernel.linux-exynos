@@ -54,6 +54,7 @@ static void rfcomm_sk_data_ready(struct rfcomm_dlc *d, struct sk_buff *skb)
 
 	atomic_add(skb->len, &sk->sk_rmem_alloc);
 	skb_queue_tail(&sk->sk_receive_queue, skb);
+
 	sk->sk_data_ready(sk);
 
 	if (atomic_read(&sk->sk_rmem_alloc) >= sk->sk_rcvbuf)
@@ -507,7 +508,6 @@ static int rfcomm_sock_accept(struct socket *sock, struct socket *newsock, int f
 		}
 
 		release_sock(sk);
-
 		timeo = wait_woken(&wait, TASK_INTERRUPTIBLE, timeo);
 
 		lock_sock_nested(sk, SINGLE_DEPTH_NESTING);
@@ -586,7 +586,6 @@ static int rfcomm_sock_sendmsg(struct kiocb *iocb, struct socket *sock,
 			break;
 		}
 		skb_reserve(skb, RFCOMM_SKB_HEAD_RESERVE);
-
 		err = memcpy_from_msg(skb_put(skb, size), msg, size);
 		if (err) {
 			kfree_skb(skb);

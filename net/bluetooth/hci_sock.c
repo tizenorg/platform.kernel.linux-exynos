@@ -279,6 +279,7 @@ void hci_send_to_monitor(struct hci_dev *hdev, struct sk_buff *skb)
 		return;
 	}
 
+
 	/* Create a private copy with headroom */
 	skb_copy = __pskb_copy_fclone(skb, HCI_MON_HDR_SIZE, GFP_ATOMIC, true);
 	if (!skb_copy)
@@ -921,7 +922,6 @@ static int hci_sock_sendmsg(struct kiocb *iocb, struct socket *sock,
 	skb = bt_skb_send_alloc(sk, len, msg->msg_flags & MSG_DONTWAIT, &err);
 	if (!skb)
 		goto done;
-
 	if (memcpy_from_msg(skb_put(skb, len), msg, len)) {
 		err = -EFAULT;
 		goto drop;
