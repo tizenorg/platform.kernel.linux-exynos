@@ -32,11 +32,21 @@
 #include <net/bluetooth/l2cap.h>
 #include <net/bluetooth/mgmt.h>
 
+#ifdef CONFIG_TIZEN_WIP
+#include <net/bluetooth/mgmt_tizen.h>
+#include <net/bluetooth/sco.h>
+#endif
 #include "hci_request.h"
 #include "smp.h"
 
 #define MGMT_VERSION	1
 #define MGMT_REVISION	8
+
+#ifdef CONFIG_TIZEN_WIP
+#ifndef U16_MAX
+#define U16_MAX		((u16)~0U)
+#endif
+#endif
 
 static const u16 mgmt_commands[] = {
 	MGMT_OP_READ_INDEX_LIST,
@@ -312,6 +322,32 @@ static int cmd_complete(struct sock *sk, u16 index, u16 cmd, u8 status,
 	return err;
 }
 
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: check for le connection update params */
+static inline int check_le_conn_update_param(u16 min, u16 max, u16 latency,
+					u16 to_multiplier)
+{
+	u16 max_latency;
+
+	if (min > max || min < 6 || max > 3200)
+		return -EINVAL;
+
+	if (to_multiplier < 10 || to_multiplier > 3200)
+		return -EINVAL;
+
+	if (max >= to_multiplier * 8)
+		return -EINVAL;
+
+	max_latency = (to_multiplier * 8 / max) - 1;
+
+	if (latency > 499 || latency > max_latency)
+		return -EINVAL;
+
+	return 0;
+}
+/* END TIZEN_Bluetooth */
+#endif
+
 static int read_version(struct sock *sk, struct hci_dev *hdev, void *data,
 			u16 data_len)
 {
@@ -558,7 +594,10 @@ static u32 get_supported_settings(struct hci_dev *hdev)
 
 	settings |= MGMT_SETTING_POWERED;
 	settings |= MGMT_SETTING_BONDABLE;
+/* Disable Debug keys implementation now */
+#ifdef CONFIG_TIZEN_WIP
 	settings |= MGMT_SETTING_DEBUG_KEYS;
+#endif
 	settings |= MGMT_SETTING_CONNECTABLE;
 	settings |= MGMT_SETTING_DISCOVERABLE;
 
@@ -573,8 +612,12 @@ static u32 get_supported_settings(struct hci_dev *hdev)
 			settings |= MGMT_SETTING_HS;
 		}
 
-		if (lmp_sc_capable(hdev))
+/* Disable Secure connection implementation now */
+#ifdef CONFIG_TIZEN_WIP
+		if (lmp_sc_capable(hdev) ||
+		    test_bit(HCI_FORCE_BREDR_SMP, &hdev->dbg_flags))
 			settings |= MGMT_SETTING_SECURE_CONN;
+#endif
 	}
 
 	if (lmp_le_capable(hdev)) {
@@ -628,11 +671,14 @@ static u32 get_current_settings(struct hci_dev *hdev)
 	if (test_bit(HCI_ADVERTISING, &hdev->dev_flags))
 		settings |= MGMT_SETTING_ADVERTISING;
 
+/* Disable Secure connection and debug keys implementation now */
+#ifdef CONFIG_TIZEN_WIP
 	if (test_bit(HCI_SC_ENABLED, &hdev->dev_flags))
 		settings |= MGMT_SETTING_SECURE_CONN;
 
 	if (test_bit(HCI_KEEP_DEBUG_KEYS, &hdev->dev_flags))
 		settings |= MGMT_SETTING_DEBUG_KEYS;
+#endif
 
 	if (test_bit(HCI_PRIVACY, &hdev->dev_flags))
 		settings |= MGMT_SETTING_PRIVACY;
@@ -817,6 +863,11 @@ static void update_scan_rsp_data(struct hci_request *req)
 
 	len = create_scan_rsp_data(hdev, cp.data);
 
+#ifdef  CONFIG_TIZEN_WIP
+	/* Advertising scan response data is handled in bluez.
+	      This value will be updated only when application request the update */
+	return;
+#else
 	if (hdev->scan_rsp_data_len == len &&
 	    memcmp(cp.data, hdev->scan_rsp_data, len) == 0)
 		return;
@@ -827,6 +878,7 @@ static void update_scan_rsp_data(struct hci_request *req)
 	cp.length = len;
 
 	hci_req_add(req, HCI_OP_LE_SET_SCAN_RSP_DATA, sizeof(cp), &cp);
+#endif
 }
 
 static u8 get_adv_discov_flags(struct hci_dev *hdev)
@@ -898,6 +950,11 @@ static void update_adv_data(struct hci_request *req)
 
 	len = create_adv_data(hdev, cp.data);
 
+#ifdef  CONFIG_TIZEN_WIP
+	/* Bluez will handle the advertising data, including the flag and tx power.
+	    This value will be updated only when application request the update */
+		return;
+#else
 	if (hdev->adv_data_len == len &&
 	    memcmp(cp.data, hdev->adv_data, len) == 0)
 		return;
@@ -908,6 +965,7 @@ static void update_adv_data(struct hci_request *req)
 	cp.length = len;
 
 	hci_req_add(req, HCI_OP_LE_SET_ADV_DATA, sizeof(cp), &cp);
+#endif
 }
 
 int mgmt_update_adv_data(struct hci_dev *hdev)
@@ -1092,7 +1150,15 @@ static void enable_advertising(struct hci_request *req)
 	memset(&cp, 0, sizeof(cp));
 	cp.min_interval = cpu_to_le16(hdev->le_adv_min_interval);
 	cp.max_interval = cpu_to_le16(hdev->le_adv_max_interval);
+#ifdef CONFIG_TIZEN_WIP
+	cp.filter_policy = hdev->adv_filter_policy;
+	if (hdev->adv_type != LE_ADV_SCAN_IND)
+		cp.type = connectable ? LE_ADV_IND : LE_ADV_NONCONN_IND;
+	else
+		cp.type = hdev->adv_type;
+#else
 	cp.type = connectable ? LE_ADV_IND : LE_ADV_NONCONN_IND;
+#endif
 	cp.own_address_type = own_addr_type;
 	cp.channel_map = hdev->le_adv_channel_map;
 
@@ -1749,7 +1815,9 @@ failed:
 static void write_fast_connectable(struct hci_request *req, bool enable)
 {
 	struct hci_dev *hdev = req->hdev;
+#ifndef CONFIG_TIZEN_WIP
 	struct hci_cp_write_page_scan_activity acp;
+#endif
 	u8 type;
 
 	if (!test_bit(HCI_BREDR_ENABLED, &hdev->dev_flags))
@@ -1758,6 +1826,13 @@ static void write_fast_connectable(struct hci_request *req, bool enable)
 	if (hdev->hci_ver < BLUETOOTH_VER_1_2)
 		return;
 
+#ifdef CONFIG_TIZEN_WIP
+	if (enable) {
+		type = PAGE_SCAN_TYPE_INTERLACED;
+	} else {
+		type = PAGE_SCAN_TYPE_STANDARD;
+	}
+#else
 	if (enable) {
 		type = PAGE_SCAN_TYPE_INTERLACED;
 
@@ -1776,6 +1851,7 @@ static void write_fast_connectable(struct hci_request *req, bool enable)
 	    __cpu_to_le16(hdev->page_scan_window) != acp.window)
 		hci_req_add(req, HCI_OP_WRITE_PAGE_SCAN_ACTIVITY,
 			    sizeof(acp), &acp);
+#endif
 
 	if (hdev->page_scan_type != type)
 		hci_req_add(req, HCI_OP_WRITE_PAGE_SCAN_TYPE, 1, &type);
@@ -1938,6 +2014,10 @@ static int set_connectable(struct sock *sk, struct hci_dev *hdev, void *data,
 	}
 
 no_scan_update:
+#ifdef CONFIG_TIZEN_WIP
+	if (cp->val || test_bit(HCI_FAST_CONNECTABLE, &hdev->dev_flags))
+		write_fast_connectable(&req, true);
+#else
 	/* If we're going from non-connectable to connectable or
 	 * vice-versa when fast connectable is enabled ensure that fast
 	 * connectable gets disabled. write_fast_connectable won't do
@@ -1946,6 +2026,7 @@ no_scan_update:
 	 */
 	if (cp->val || test_bit(HCI_FAST_CONNECTABLE, &hdev->dev_flags))
 		write_fast_connectable(&req, false);
+#endif
 
 	/* Update the advertising parameters if necessary */
 	if (test_bit(HCI_ADVERTISING, &hdev->dev_flags))
@@ -2204,14 +2285,20 @@ static void le_enable_complete(struct hci_dev *hdev, u8 status, u16 opcode)
 {
 	struct cmd_lookup match = { NULL, hdev };
 
+#ifdef CONFIG_TIZEN_WIP
 	hci_dev_lock(hdev);
+#endif
 
 	if (status) {
 		u8 mgmt_err = mgmt_status(status);
 
 		mgmt_pending_foreach(MGMT_OP_SET_LE, hdev, cmd_status_rsp,
 				     &mgmt_err);
+#ifdef CONFIG_TIZEN_WIP
 		goto unlock;
+#else
+		return;
+#endif
 	}
 
 	mgmt_pending_foreach(MGMT_OP_SET_LE, hdev, settings_rsp, &match);
@@ -2229,15 +2316,21 @@ static void le_enable_complete(struct hci_dev *hdev, u8 status, u16 opcode)
 	if (test_bit(HCI_LE_ENABLED, &hdev->dev_flags)) {
 		struct hci_request req;
 
+#ifndef CONFIG_TIZEN_WIP
+		hci_dev_lock(hdev);
+#endif
+
 		hci_req_init(&req, hdev);
 		update_adv_data(&req);
 		update_scan_rsp_data(&req);
 		__hci_update_background_scan(&req);
 		hci_req_run(&req, NULL);
 	}
-
+	hci_update_background_scan(hdev);
+#ifdef CONFIG_TIZEN_WIP
 unlock:
 	hci_dev_unlock(hdev);
+#endif
 }
 
 static int set_le(struct sock *sk, struct hci_dev *hdev, void *data, u16 len)
@@ -3672,7 +3765,7 @@ static int add_remote_oob_data(struct sock *sk, struct hci_dev *hdev,
 				   status, &cp->addr, sizeof(cp->addr));
 	} else if (len == MGMT_ADD_REMOTE_OOB_EXT_DATA_SIZE) {
 		struct mgmt_cp_add_remote_oob_ext_data *cp = data;
-		u8 *rand192, *hash192, *rand256, *hash256;
+		u8 *rand192, *hash192;
 		u8 status;
 
 		if (bdaddr_type_is_le(cp->addr.type)) {
@@ -3691,34 +3784,13 @@ static int add_remote_oob_data(struct sock *sk, struct hci_dev *hdev,
 			rand192 = NULL;
 			hash192 = NULL;
 		} else {
-			/* In case one of the P-192 values is set to zero,
-			 * then just disable OOB data for P-192.
-			 */
-			if (!memcmp(cp->rand192, ZERO_KEY, 16) ||
-			    !memcmp(cp->hash192, ZERO_KEY, 16)) {
-				rand192 = NULL;
-				hash192 = NULL;
-			} else {
-				rand192 = cp->rand192;
-				hash192 = cp->hash192;
-			}
-		}
-
-		/* In case one of the P-256 values is set to zero, then just
-		 * disable OOB data for P-256.
-		 */
-		if (!memcmp(cp->rand256, ZERO_KEY, 16) ||
-		    !memcmp(cp->hash256, ZERO_KEY, 16)) {
-			rand256 = NULL;
-			hash256 = NULL;
-		} else {
-			rand256 = cp->rand256;
-			hash256 = cp->hash256;
+			rand192 = cp->rand192;
+			hash192 = cp->hash192;
 		}
 
 		err = hci_add_remote_oob_data(hdev, &cp->addr.bdaddr,
 					      cp->addr.type, hash192, rand192,
-					      hash256, rand256);
+					      cp->hash256, cp->rand256);
 		if (err < 0)
 			status = MGMT_STATUS_FAILED;
 		else
@@ -3896,9 +3968,6 @@ static void start_discovery_complete(struct hci_dev *hdev, u8 status,
 
 	hci_discovery_set_state(hdev, DISCOVERY_FINDING);
 
-	/* If the scan involves LE scan, pick proper timeout to schedule
-	 * hdev->le_scan_disable that will stop it.
-	 */
 	switch (hdev->discovery.type) {
 	case DISCOV_TYPE_LE:
 		timeout = msecs_to_jiffies(DISCOV_LE_TIMEOUT);
@@ -3915,23 +3984,9 @@ static void start_discovery_complete(struct hci_dev *hdev, u8 status,
 		break;
 	}
 
-	if (timeout) {
-		/* When service discovery is used and the controller has
-		 * a strict duplicate filter, it is important to remember
-		 * the start and duration of the scan. This is required
-		 * for restarting scanning during the discovery phase.
-		 */
-		if (test_bit(HCI_QUIRK_STRICT_DUPLICATE_FILTER,
-			     &hdev->quirks) &&
-		    (hdev->discovery.uuid_count > 0 ||
-		     hdev->discovery.rssi != HCI_RSSI_INVALID)) {
-			hdev->discovery.scan_start = jiffies;
-			hdev->discovery.scan_duration = timeout;
-		}
-
+	if (timeout)
 		queue_delayed_work(hdev->workqueue,
 				   &hdev->le_scan_disable, timeout);
-	}
 
 unlock:
 	hci_dev_unlock(hdev);
@@ -4551,8 +4606,615 @@ static int set_scan_params(struct sock *sk, struct hci_dev *hdev,
 	return err;
 }
 
-static void fast_connectable_complete(struct hci_dev *hdev, u8 status,
-				      u16 opcode)
+#ifdef CONFIG_TIZEN_WIP
+static int le_set_scan_params(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	struct mgmt_cp_le_set_scan_params *cp = data;
+	__u16 interval, window;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_LE_SET_SCAN_PARAMS,
+				  MGMT_STATUS_NOT_SUPPORTED);
+
+	interval = __le16_to_cpu(cp->interval);
+
+	if (interval < 0x0004 || interval > 0x4000)
+		return cmd_status(sk, hdev->id, MGMT_OP_LE_SET_SCAN_PARAMS,
+				  MGMT_STATUS_INVALID_PARAMS);
+
+	window = __le16_to_cpu(cp->window);
+
+	if (window < 0x0004 || window > 0x4000)
+		return cmd_status(sk, hdev->id, MGMT_OP_LE_SET_SCAN_PARAMS,
+				  MGMT_STATUS_INVALID_PARAMS);
+
+	if (window > interval)
+		return cmd_status(sk, hdev->id, MGMT_OP_LE_SET_SCAN_PARAMS,
+				  MGMT_STATUS_INVALID_PARAMS);
+
+	hci_dev_lock(hdev);
+
+	hdev->le_scan_type = cp->type;
+	hdev->le_scan_interval = interval;
+	hdev->le_scan_window = window;
+
+	err = cmd_complete(sk, hdev->id, MGMT_OP_LE_SET_SCAN_PARAMS, 0, NULL, 0);
+
+	/* If background scan is running, restart it so new parameters are
+	 * loaded.
+	 */
+	if (test_bit(HCI_LE_SCAN, &hdev->dev_flags) &&
+	    hdev->discovery.state == DISCOVERY_STOPPED) {
+		struct hci_request req;
+
+		hci_req_init(&req, hdev);
+
+		hci_req_add_le_scan_disable(&req);
+		hci_req_add_le_passive_scan(&req);
+
+		hci_req_run(&req, NULL);
+	}
+
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+#endif
+
+#ifdef CONFIG_TIZEN_WIP /* Adv White List feature */
+static void add_white_list_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct mgmt_cp_add_dev_white_list *cp;
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_ADD_DEV_WHITE_LIST, hdev);
+	if (!cmd)
+		goto unlock;
+
+	cp = cmd->param;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_ADD_DEV_WHITE_LIST,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_ADD_DEV_WHITE_LIST, 0,
+			     cp, sizeof(*cp));
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int add_white_list(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct mgmt_cp_add_dev_white_list *cp = data;
+	struct hci_request req;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_ADD_DEV_WHITE_LIST,
+				  MGMT_STATUS_NOT_SUPPORTED);
+
+	if (!hdev_is_powered(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_ADD_DEV_WHITE_LIST,
+				  MGMT_STATUS_REJECTED);
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_ADD_DEV_WHITE_LIST, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_ADD_DEV_WHITE_LIST,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_ADD_DEV_WHITE_LIST, hdev, data, len);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	hci_req_add(&req, HCI_OP_LE_ADD_DEV_WHITE_LIST, sizeof(*cp), cp);
+
+	err = hci_req_run(&req, add_white_list_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		goto unlocked;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static void remove_from_white_list_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct mgmt_cp_remove_dev_from_white_list *cp;
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST, hdev);
+	if (!cmd)
+		goto unlock;
+
+	cp = cmd->param;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST, 0,
+			     cp, sizeof(*cp));
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int remove_from_white_list(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct mgmt_cp_remove_dev_from_white_list *cp = data;
+	struct hci_request req;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST,
+				  MGMT_STATUS_NOT_SUPPORTED);
+
+	if (!hdev_is_powered(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST,
+				  MGMT_STATUS_REJECTED);
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST, hdev, data, len);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	hci_req_add(&req, HCI_OP_LE_REMOVE_FROM_DEV_WHITE_LIST, sizeof(*cp), cp);
+
+	err = hci_req_run(&req, remove_from_white_list_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		goto unlocked;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static void clear_white_list_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_CLEAR_DEV_WHITE_LIST, hdev);
+	if (!cmd)
+		goto unlock;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_CLEAR_DEV_WHITE_LIST,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_CLEAR_DEV_WHITE_LIST, 0,
+			     NULL, 0);
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int clear_white_list(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_CLEAR_DEV_WHITE_LIST,
+				  MGMT_STATUS_NOT_SUPPORTED);
+
+	if (!hdev_is_powered(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_CLEAR_DEV_WHITE_LIST,
+				  MGMT_STATUS_REJECTED);
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_CLEAR_DEV_WHITE_LIST, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_CLEAR_DEV_WHITE_LIST,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_CLEAR_DEV_WHITE_LIST, hdev, NULL, 0);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	hci_req_add(&req, HCI_OP_LE_CLEAR_DEV_WHITE_LIST, 0, NULL);
+
+	err = hci_req_run(&req, clear_white_list_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		goto unlocked;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static int mgmt_start_le_discovery_failed(struct hci_dev *hdev, u8 status)
+{
+	struct pending_cmd *cmd;
+	u8 type;
+	int err;
+
+	hci_le_discovery_set_state(hdev, DISCOVERY_STOPPED);
+
+	cmd = mgmt_pending_find(MGMT_OP_START_LE_DISCOVERY, hdev);
+	if (!cmd)
+		return -ENOENT;
+
+	type = hdev->le_discovery.type;
+
+	err = cmd_complete(cmd->sk, hdev->id, cmd->opcode, mgmt_status(status),
+			   &type, sizeof(type));
+	mgmt_pending_remove(cmd);
+
+	return err;
+}
+
+static void start_le_discovery_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	unsigned long timeout = 0;
+
+	BT_DBG("status %d", status);
+
+	if (status) {
+		hci_dev_lock(hdev);
+		mgmt_start_le_discovery_failed(hdev, status);
+		hci_dev_unlock(hdev);
+		return;
+	}
+
+	hci_dev_lock(hdev);
+	hci_le_discovery_set_state(hdev, DISCOVERY_FINDING);
+	hci_dev_unlock(hdev);
+
+	switch (hdev->le_discovery.type) {
+	case DISCOV_TYPE_LE:
+/* BEGIN TIZEN_Bluetooth :: Keep going on LE Scan  */
+#if 0
+		timeout = msecs_to_jiffies(DISCOV_LE_TIMEOUT);
+#endif
+/* END TIZEN_Bluetooth */
+		break;
+
+	default:
+		BT_ERR("Invalid discovery type %d", hdev->le_discovery.type);
+	}
+
+	if (!timeout)
+		return;
+
+	queue_delayed_work(hdev->workqueue, &hdev->le_scan_disable, timeout);
+}
+
+static int start_le_discovery(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	struct mgmt_cp_start_le_discovery *cp = data;
+	struct pending_cmd *cmd;
+	struct hci_cp_le_set_scan_param param_cp;
+	struct hci_cp_le_set_scan_enable enable_cp;
+	struct hci_request req;
+	u8 status, own_addr_type;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	hci_dev_lock(hdev);
+
+	if (!hdev_is_powered(hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_START_LE_DISCOVERY,
+				 MGMT_STATUS_NOT_POWERED);
+		goto failed;
+	}
+
+	if (hdev->le_discovery.state != DISCOVERY_STOPPED) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_START_LE_DISCOVERY,
+				 MGMT_STATUS_BUSY);
+		goto failed;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_START_LE_DISCOVERY, hdev, NULL, 0);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto failed;
+	}
+
+	hdev->le_discovery.type = cp->type;
+
+	hci_req_init(&req, hdev);
+
+	switch (hdev->le_discovery.type) {
+	case DISCOV_TYPE_LE:
+		status = mgmt_le_support(hdev);
+		if (status) {
+			err = cmd_status(sk, hdev->id, MGMT_OP_START_LE_DISCOVERY,
+					 status);
+			mgmt_pending_remove(cmd);
+			goto failed;
+		}
+
+		/* If controller is scanning, it means the background scanning
+		 * is running. Thus, we should temporarily stop it in order to
+		 * set the discovery scanning parameters.
+		 */
+		if (test_bit(HCI_LE_SCAN, &hdev->dev_flags))
+			hci_req_add_le_scan_disable(&req);
+
+		memset(&param_cp, 0, sizeof(param_cp));
+
+		/* All active scans will be done with either a resolvable
+		 * private address (when privacy feature has been enabled)
+		 * or unresolvable private address.
+		 */
+		err = hci_update_random_address(&req, true, &own_addr_type);
+		if (err < 0) {
+			err = cmd_status(sk, hdev->id, MGMT_OP_START_LE_DISCOVERY,
+					 MGMT_STATUS_FAILED);
+			mgmt_pending_remove(cmd);
+			goto failed;
+		}
+
+		param_cp.type = hdev->le_scan_type;
+		param_cp.interval = cpu_to_le16(hdev->le_scan_interval);
+		param_cp.window = cpu_to_le16(hdev->le_scan_window);
+		param_cp.own_address_type = own_addr_type;
+		hci_req_add(&req, HCI_OP_LE_SET_SCAN_PARAM, sizeof(param_cp),
+			    &param_cp);
+
+		memset(&enable_cp, 0, sizeof(enable_cp));
+		enable_cp.enable = LE_SCAN_ENABLE;
+		enable_cp.filter_dup = LE_SCAN_FILTER_DUP_DISABLE;
+
+		hci_req_add(&req, HCI_OP_LE_SET_SCAN_ENABLE, sizeof(enable_cp),
+			    &enable_cp);
+		break;
+
+	default:
+		err = cmd_status(sk, hdev->id, MGMT_OP_START_LE_DISCOVERY,
+				 MGMT_STATUS_INVALID_PARAMS);
+		mgmt_pending_remove(cmd);
+		goto failed;
+	}
+
+	err = hci_req_run(&req, start_le_discovery_complete);
+	if (err < 0)
+		mgmt_pending_remove(cmd);
+	else
+		hci_le_discovery_set_state(hdev, DISCOVERY_STARTING);
+
+failed:
+	hci_dev_unlock(hdev);
+	return err;
+}
+
+static int mgmt_stop_le_discovery_failed(struct hci_dev *hdev, u8 status)
+{
+	struct pending_cmd *cmd;
+	int err;
+
+	cmd = mgmt_pending_find(MGMT_OP_STOP_LE_DISCOVERY, hdev);
+	if (!cmd)
+		return -ENOENT;
+
+	err = cmd_complete(cmd->sk, hdev->id, cmd->opcode, mgmt_status(status),
+			   &hdev->le_discovery.type, sizeof(hdev->le_discovery.type));
+	mgmt_pending_remove(cmd);
+
+	return err;
+}
+
+static void stop_le_discovery_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	BT_DBG("status %d", status);
+
+	hci_dev_lock(hdev);
+
+	if (status) {
+		mgmt_stop_le_discovery_failed(hdev, status);
+		goto unlock;
+	}
+
+	hci_le_discovery_set_state(hdev, DISCOVERY_STOPPED);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int stop_le_discovery(struct sock *sk, struct hci_dev *hdev, void *data,
+			  u16 len)
+{
+	struct mgmt_cp_stop_le_discovery *mgmt_cp = data;
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	hci_dev_lock(hdev);
+
+	if (!hci_le_discovery_active(hdev)) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_STOP_LE_DISCOVERY,
+				   MGMT_STATUS_REJECTED, &mgmt_cp->type,
+				   sizeof(mgmt_cp->type));
+		goto unlock;
+	}
+
+	if (hdev->le_discovery.type != mgmt_cp->type) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_STOP_LE_DISCOVERY,
+				   MGMT_STATUS_INVALID_PARAMS, &mgmt_cp->type,
+				   sizeof(mgmt_cp->type));
+		goto unlock;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_STOP_LE_DISCOVERY, hdev, NULL, 0);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlock;
+	}
+
+	hci_req_init(&req, hdev);
+
+	switch (hdev->le_discovery.state) {
+	case DISCOVERY_FINDING:
+		cancel_delayed_work(&hdev->le_scan_disable);
+		hci_req_add_le_scan_disable(&req);
+		break;
+
+	default:
+		BT_DBG("unknown le discovery state %u", hdev->le_discovery.state);
+
+		mgmt_pending_remove(cmd);
+		err = cmd_complete(sk, hdev->id, MGMT_OP_STOP_LE_DISCOVERY,
+				   MGMT_STATUS_FAILED, &mgmt_cp->type,
+				   sizeof(mgmt_cp->type));
+		goto unlock;
+	}
+
+	err = hci_req_run(&req, stop_le_discovery_complete);
+	if (err < 0)
+		mgmt_pending_remove(cmd);
+	else
+		hci_le_discovery_set_state(hdev, DISCOVERY_STOPPING);
+
+unlock:
+	hci_dev_unlock(hdev);
+	return err;
+}
+
+/* BEGIN TIZEN_Bluetooth :: LE auto connect */
+static int disable_le_auto_connect(struct sock *sk, struct hci_dev *hdev,
+			void *data, u16 len)
+{
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	hci_dev_lock(hdev);
+
+	err = hci_send_cmd(hdev, HCI_OP_LE_CREATE_CONN_CANCEL, 0, NULL);
+	if (err < 0) {
+		BT_ERR("HCI_OP_LE_CREATE_CONN_CANCEL is failed");
+	}
+
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+/* END TIZEN_Bluetooth */
+
+/* BEGIN TIZEN_Bluetooth :: LE connection Update */
+static int le_conn_update(struct sock *sk, struct hci_dev *hdev, void *data,
+			u16 len)
+{
+	struct mgmt_cp_le_conn_update *cp = data;
+
+	struct hci_conn *conn;
+	u16 min, max, latency, supervision_timeout;
+	int err = -1;
+
+	if (!hdev_is_powered(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_LE_CONN_UPDATE,
+				MGMT_STATUS_NOT_POWERED);
+
+	min     = __le16_to_cpu(cp->conn_interval_min);
+	max     = __le16_to_cpu(cp->conn_interval_max);
+	latency     = __le16_to_cpu(cp->conn_latency);
+	supervision_timeout = __le16_to_cpu(cp->supervision_timeout);
+
+	BT_DBG("min 0x%4.4x max 0x%4.4x latency: 0x%4.4x supervision_timeout: 0x%4.4x",
+			min, max, latency, supervision_timeout);
+
+	err = check_le_conn_update_param(min, max, latency, supervision_timeout);
+
+	if (err < 0) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_LE_CONN_UPDATE,
+				MGMT_STATUS_INVALID_PARAMS);
+
+		goto done;
+	}
+
+	hci_dev_lock(hdev);
+	conn = hci_conn_hash_lookup_ba(hdev, LE_LINK, &cp->bdaddr);
+
+	if (!conn) {
+		cmd_status(sk, hdev->id, MGMT_OP_LE_CONN_UPDATE,
+				MGMT_STATUS_NOT_CONNECTED);
+		goto done;
+	}
+
+	hci_le_conn_update(conn, min, max, latency, supervision_timeout);
+
+	err = cmd_complete(sk, hdev->id, MGMT_OP_LE_CONN_UPDATE, 0,
+				NULL, 0);
+done:
+	hci_dev_unlock(hdev);
+	return err;
+}
+/* END TIZEN_Bluetooth */
+#endif
+
+static void fast_connectable_complete(struct hci_dev *hdev, u8 status, u16 opcode)
 {
 	struct pending_cmd *cmd;
 
@@ -4856,7 +5518,6 @@ static int set_secure_conn(struct sock *sk, struct hci_dev *hdev,
 				  MGMT_STATUS_NOT_SUPPORTED);
 
 	if (test_bit(HCI_BREDR_ENABLED, &hdev->dev_flags) &&
-	    lmp_sc_capable(hdev) &&
 	    !test_bit(HCI_SSP_ENABLED, &hdev->dev_flags))
 		return cmd_status(sk, hdev->id, MGMT_OP_SET_SECURE_CONN,
 				  MGMT_STATUS_REJECTED);
@@ -4992,9 +5653,14 @@ static int set_privacy(struct sock *sk, struct hci_dev *hdev, void *cp_data,
 		return cmd_status(sk, hdev->id, MGMT_OP_SET_PRIVACY,
 				  MGMT_STATUS_INVALID_PARAMS);
 
+/* Not sure why below condition is required; commenting for now,
+	* since set privacy command is always rejected if this condition is enabled.
+	*/
+#ifndef CONFIG_TIZEN_WIP
 	if (hdev_is_powered(hdev))
 		return cmd_status(sk, hdev->id, MGMT_OP_SET_PRIVACY,
 				  MGMT_STATUS_REJECTED);
+#endif
 
 	hci_dev_lock(hdev);
 
@@ -5107,6 +5773,1030 @@ static int load_irks(struct sock *sk, struct hci_dev *hdev, void *cp_data,
 
 	return err;
 }
+
+#ifdef CONFIG_TIZEN_WIP
+static int set_advertising_params(struct sock *sk, struct hci_dev *hdev,
+		                  void *data, u16 len)
+{
+	struct mgmt_cp_set_advertising_params *cp = data;
+	__u16 min_interval;
+	__u16 max_interval;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_PARAMS,
+				MGMT_STATUS_NOT_SUPPORTED);
+
+	if (test_bit(HCI_ADVERTISING, &hdev->dev_flags))
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_PARAMS,
+				MGMT_STATUS_BUSY);
+
+	min_interval = __le16_to_cpu(cp->interval_min);
+	max_interval = __le16_to_cpu(cp->interval_max);
+
+	if (min_interval > max_interval ||
+	    min_interval < 0x0020 || max_interval > 0x4000)
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_PARAMS,
+				MGMT_STATUS_INVALID_PARAMS);
+
+	hci_dev_lock(hdev);
+
+	hdev->le_adv_min_interval = min_interval;
+	hdev->le_adv_max_interval = max_interval;
+	hdev->adv_filter_policy = cp->filter_policy;
+	hdev->adv_type = cp->type;
+
+	err = cmd_complete(sk, hdev->id, MGMT_OP_SET_ADVERTISING_PARAMS, 0, NULL, 0);
+
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static void set_advertising_data_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct mgmt_cp_set_advertising_data *cp;
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_SET_ADVERTISING_DATA, hdev);
+	if (!cmd)
+		goto unlock;
+
+	cp = cmd->param;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_SET_ADVERTISING_DATA,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_SET_ADVERTISING_DATA, 0,
+			     cp, sizeof(*cp));
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int set_advertising_data(struct sock *sk, struct hci_dev *hdev,
+		                void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	struct mgmt_cp_set_advertising_data *cp = data;
+	struct hci_cp_le_set_adv_data adv;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev)) {
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_DATA,
+				MGMT_STATUS_NOT_SUPPORTED);
+	}
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_SET_ADVERTISING_DATA, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_DATA,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_SET_ADVERTISING_DATA,
+			       hdev, data, len);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	if (len > HCI_MAX_AD_LENGTH) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_DATA,
+				 MGMT_STATUS_INVALID_PARAMS);
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	memset(&adv, 0, sizeof(adv));
+	memcpy(adv.data, cp->data, len);
+	adv.length = len;
+
+	hci_req_add(&req, HCI_OP_LE_SET_ADV_DATA, sizeof(adv), &adv);
+
+	err = hci_req_run(&req, set_advertising_data_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static void set_scan_rsp_data_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct mgmt_cp_set_scan_rsp_data *cp;
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_SET_SCAN_RSP_DATA, hdev);
+	if (!cmd)
+		goto unlock;
+
+	cp = cmd->param;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_SET_SCAN_RSP_DATA,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_SET_SCAN_RSP_DATA, 0,
+			     cp, sizeof(*cp));
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int set_scan_rsp_data(struct sock *sk, struct hci_dev *hdev, void *data,
+		             u16 len)
+{
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	struct mgmt_cp_set_scan_rsp_data *cp = data;
+	struct hci_cp_le_set_scan_rsp_data rsp;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_SCAN_RSP_DATA,
+				MGMT_STATUS_NOT_SUPPORTED);
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_SET_SCAN_RSP_DATA, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_SCAN_RSP_DATA,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_SET_SCAN_RSP_DATA, hdev, data, len);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+	if (len > HCI_MAX_AD_LENGTH) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_SCAN_RSP_DATA,
+				 MGMT_STATUS_INVALID_PARAMS);
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	memset(&rsp, 0, sizeof(rsp));
+	memcpy(rsp.data, cp->data, len);
+	rsp.length = len;
+
+	hci_req_add(&req, HCI_OP_LE_SET_SCAN_RSP_DATA, sizeof(rsp), &rsp);
+
+	err = hci_req_run(&req, set_scan_rsp_data_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static void set_manufacturer_data_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct mgmt_cp_set_manufacturer_data *cp;
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_SET_MANUFACTURER_DATA, hdev);
+	if (!cmd)
+		goto unlock;
+
+	cp = cmd->param;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_SET_MANUFACTURER_DATA,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_SET_MANUFACTURER_DATA, 0,
+			     cp, sizeof(*cp));
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int set_manufacturer_data(struct sock *sk, struct hci_dev *hdev,
+					void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	struct mgmt_cp_set_manufacturer_data *cp = data;
+	u8 old_data[HCI_MAX_EIR_LENGTH] = {0, };
+	u8 old_len;
+
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_bredr_capable(hdev)) {
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_MANUFACTURER_DATA,
+				MGMT_STATUS_NOT_SUPPORTED);
+	}
+
+	if (cp->data[0] == 0 ||
+			cp->data[0] - 1 > sizeof(hdev->manufacturer_data)) {
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_MANUFACTURER_DATA,
+				MGMT_STATUS_INVALID_PARAMS);
+	}
+
+	if (cp->data[1] != 0xFF) {
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_MANUFACTURER_DATA,
+				MGMT_STATUS_NOT_SUPPORTED);
+	}
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_SET_MANUFACTURER_DATA, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_MANUFACTURER_DATA,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_SET_MANUFACTURER_DATA, hdev, data, len);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	/* if new data is same as previous data then return command complete event*/
+	if (hdev->manufacturer_len == cp->data[0] - 1 &&
+	    !memcmp(hdev->manufacturer_data, cp->data + 2, cp->data[0] - 1)) {
+		mgmt_pending_remove(cmd);
+		cmd_complete(sk, hdev->id, MGMT_OP_SET_MANUFACTURER_DATA, 0,
+				cp, sizeof(*cp));
+		hci_dev_unlock(hdev);
+		return 0;
+	}
+
+	old_len = hdev->manufacturer_len;
+	if (old_len > 0) {
+		memcpy(old_data, hdev->manufacturer_data, old_len);
+	}
+
+	hdev->manufacturer_len = cp->data[0] - 1;
+	if (hdev->manufacturer_len > 0) {
+		memcpy(hdev->manufacturer_data, cp->data + 2, hdev->manufacturer_len);
+	}
+
+	update_eir(&req);
+
+	err = hci_req_run(&req, set_manufacturer_data_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		goto failed;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+
+failed:
+	memset(hdev->manufacturer_data, 0x00, sizeof(hdev->manufacturer_data));
+	hdev->manufacturer_len = old_len;
+	if (hdev->manufacturer_len > 0) {
+		memcpy(hdev->manufacturer_data, old_data,
+		       hdev->manufacturer_len);
+	}
+	hci_dev_unlock(hdev);
+	return err;
+}
+
+#ifdef CONFIG_TIZEN_WIP
+static int set_voice_setting(struct sock *sk, struct hci_dev *hdev,
+					void *data, u16 len)
+{
+	struct mgmt_cp_set_voice_setting *cp = data;
+	struct hci_conn *conn;
+	struct hci_conn *sco_conn;
+
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_bredr_capable(hdev)) {
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_VOICE_SETTING,
+				MGMT_STATUS_NOT_SUPPORTED);
+	}
+
+	hci_dev_lock(hdev);
+
+	conn = hci_conn_hash_lookup_ba(hdev, ACL_LINK, &cp->bdaddr);
+	if (!conn) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_SET_VOICE_SETTING, 0,
+				NULL, 0);
+		goto unlock;
+	}
+
+	conn->voice_setting = cp->voice_setting;
+	conn->sco_role = cp->sco_role;
+
+	sco_conn = hci_conn_hash_lookup_sco(hdev);
+	if (sco_conn && bacmp(&sco_conn->dst, &cp->bdaddr) != 0) {
+		BT_ERR("There is other SCO connection.");
+		goto done;
+	}
+
+	if (conn->sco_role == MGMT_SCO_ROLE_HANDSFREE) {
+		if (conn->voice_setting == 0x0063)
+			sco_connect_set_wbc(hdev);
+		else
+			sco_connect_set_nbc(hdev);
+	} else {
+		if (conn->voice_setting == 0x0063)
+			sco_connect_set_gw_wbc(hdev);
+		else
+			sco_connect_set_gw_nbc(hdev);
+	}
+
+done:
+	err = cmd_complete(sk, hdev->id, MGMT_OP_SET_VOICE_SETTING, 0,
+			cp, sizeof(cp));
+
+unlock:
+	hci_dev_unlock(hdev);
+	return err;
+}
+#endif
+
+static int get_adv_tx_power(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	struct mgmt_rp_get_adv_tx_power *rp;
+	size_t rp_len;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	hci_dev_lock(hdev);
+
+	rp_len = sizeof(*rp);
+	rp = kmalloc(rp_len, GFP_KERNEL);
+	if (!rp) {
+		err = -ENOMEM;
+		goto unlock;
+	}
+
+	rp->adv_tx_power= hdev->adv_tx_power;
+
+	err = cmd_complete(sk, hdev->id, MGMT_OP_GET_ADV_TX_POWER, 0, rp,
+			   rp_len);
+
+	kfree(rp);
+
+unlock:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+/* BEGIN TIZEN_Bluetooth :: Apply RSSI changes   */
+static void set_rssi_threshold_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	BT_DBG("status 0x%02x", status);
+}
+
+static void set_rssi_disable_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	BT_DBG("status 0x%02x", status);
+}
+
+int mgmt_set_rssi_threshold(struct sock *sk, struct hci_dev *hdev,
+		void *data, u16 len)
+{
+	int err = 0;
+	struct hci_cp_set_rssi_threshold th = { 0, };
+	struct mgmt_cp_set_enable_rssi *cp = data;
+	struct hci_conn *conn;
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	__u8 dest_type;
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_SET_RSSI_ENABLE, hdev);
+	if (!cmd) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_RSSI_ENABLE,
+				MGMT_STATUS_FAILED);
+		goto unlocked;
+	}
+
+	if (!lmp_le_capable(hdev)) {
+		mgmt_pending_remove(cmd);
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_RSSI_ENABLE,
+				MGMT_STATUS_NOT_SUPPORTED);
+	}
+
+	if (!hdev_is_powered(hdev)) {
+		BT_DBG("%s", hdev->name);
+		err = cmd_complete(sk, hdev->id, MGMT_OP_SET_RSSI_ENABLE,
+				MGMT_STATUS_NOT_POWERED, data, len);
+		mgmt_pending_remove(cmd);
+		goto unlocked;
+	}
+
+	if (cp->link_type == 0x01)
+		dest_type = LE_LINK;
+	else
+		dest_type = ACL_LINK;
+
+	/* Get LE/ACL link handle info*/
+	conn = hci_conn_hash_lookup_ba(hdev,
+			dest_type, &cp->bdaddr);
+
+	if (conn == NULL) {
+		err = cmd_complete(sk, hdev->id,
+				MGMT_OP_SET_RSSI_ENABLE, 1, NULL, 0);
+		mgmt_pending_remove(cmd);
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	th.hci_le_ext_opcode = 0x0B;
+	th.mode = 0x01;
+	th.conn_handle = conn->handle;
+	th.alert_mask = 0x07;
+	th.low_th = cp->low_th;
+	th.in_range_th = cp->in_range_th;
+	th.high_th = cp->high_th;
+
+	hci_req_add(&req, HCI_OP_ENABLE_RSSI, sizeof(th), &th);
+	err = hci_req_run(&req, set_rssi_threshold_complete);
+
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		BT_ERR("Error in requesting hci_req_run");
+		goto unlocked;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+	return err;
+}
+
+void mgmt_rssi_enable_success(struct sock *sk, struct hci_dev *hdev,
+		void *data, struct hci_cc_rsp_enable_rssi *rp, int success)
+{
+	struct mgmt_cc_rsp_enable_rssi mgmt_rp = { 0, };
+	struct mgmt_cp_set_enable_rssi *cp = data;
+	struct pending_cmd *cmd;
+
+	if (cp == NULL || rp == NULL)
+		goto remove_cmd;
+
+	mgmt_rp.status = rp->status;
+	mgmt_rp.le_ext_opcode = rp->le_ext_opcode;
+	mgmt_rp.bt_address = cp->bdaddr;
+	mgmt_rp.link_type = cp->link_type;
+
+	cmd_complete(sk, hdev->id, MGMT_OP_SET_RSSI_ENABLE, MGMT_STATUS_SUCCESS,
+			&mgmt_rp, sizeof(struct mgmt_cc_rsp_enable_rssi));
+
+	mgmt_event(MGMT_EV_RSSI_ENABLED, hdev, &mgmt_rp,
+			sizeof(struct mgmt_cc_rsp_enable_rssi), NULL);
+
+	hci_conn_rssi_unset_all(hdev, mgmt_rp.link_type);
+	hci_conn_rssi_state_set(hdev, mgmt_rp.link_type,
+			&mgmt_rp.bt_address, true);
+
+remove_cmd:
+	hci_dev_lock(hdev);
+	cmd = mgmt_pending_find(MGMT_OP_SET_RSSI_ENABLE, hdev);
+	if (cmd)
+		mgmt_pending_remove(cmd);
+
+	hci_dev_unlock(hdev);
+}
+
+void mgmt_rssi_disable_success(struct sock *sk, struct hci_dev *hdev,
+		void *data, struct hci_cc_rsp_enable_rssi *rp, int success)
+{
+	struct mgmt_cc_rp_disable_rssi mgmt_rp = { 0, };
+	struct mgmt_cp_disable_rssi *cp = data;
+	struct pending_cmd *cmd;
+
+	if (cp == NULL || rp == NULL)
+		goto remove_cmd;
+
+	mgmt_rp.status = rp->status;
+	mgmt_rp.le_ext_opcode = rp->le_ext_opcode;
+	mgmt_rp.bt_address = cp->bdaddr;
+	mgmt_rp.link_type = cp->link_type;
+
+	cmd_complete(sk, hdev->id, MGMT_OP_SET_RSSI_DISABLE, MGMT_STATUS_SUCCESS,
+			&mgmt_rp, sizeof(struct mgmt_cc_rsp_enable_rssi));
+
+	mgmt_event(MGMT_EV_RSSI_DISABLED, hdev, &mgmt_rp,
+			sizeof(struct mgmt_cc_rsp_enable_rssi), NULL);
+
+	hci_conn_rssi_state_set(hdev, mgmt_rp.link_type,
+			&mgmt_rp.bt_address, false);
+
+
+remove_cmd:
+	hci_dev_lock(hdev);
+	cmd = mgmt_pending_find(MGMT_OP_SET_RSSI_DISABLE, hdev);
+	if (cmd)
+		mgmt_pending_remove(cmd);
+
+	hci_dev_unlock(hdev);
+}
+
+static int mgmt_set_disable_rssi(struct sock *sk, struct hci_dev *hdev,
+		void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	struct hci_cp_set_enable_rssi cp_en = { 0, };
+	int err;
+
+	BT_DBG("Set Disable RSSI.");
+
+	cp_en.hci_le_ext_opcode = 0x01;
+	cp_en.le_enable_cs_Features = 0x00;
+	cp_en.data[0] = 0x00;
+	cp_en.data[1] = 0x00;
+	cp_en.data[2] = 0x00;
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_SET_RSSI_DISABLE, hdev);
+	if (!cmd) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_RSSI_DISABLE,
+				MGMT_STATUS_FAILED);
+		goto unlocked;
+	}
+
+	if (!lmp_le_capable(hdev)) {
+		mgmt_pending_remove(cmd);
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_RSSI_DISABLE,
+				MGMT_STATUS_NOT_SUPPORTED);
+	}
+
+	if (!hdev_is_powered(hdev)) {
+		BT_DBG("%s", hdev->name);
+		err = cmd_complete(sk, hdev->id, MGMT_OP_SET_RSSI_DISABLE,
+				MGMT_STATUS_NOT_POWERED, data, len);
+		mgmt_pending_remove(cmd);
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	BT_DBG("Enable Len: %d [%2.2X %2.2X %2.2X %2.2X %2.2X]",
+			sizeof(struct hci_cp_set_enable_rssi),
+			cp_en.hci_le_ext_opcode, cp_en.le_enable_cs_Features,
+			cp_en.data[0], cp_en.data[1], cp_en.data[2]);
+
+	hci_req_add(&req, HCI_OP_ENABLE_RSSI, sizeof(cp_en), &cp_en);
+	err = hci_req_run(&req, set_rssi_disable_complete);
+
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		BT_ERR("Error in requesting hci_req_run");
+		goto unlocked;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+
+}
+
+void mgmt_enable_rssi_cc(struct hci_dev *hdev, void *response, u8 status)
+{
+	struct hci_cc_rsp_enable_rssi *rp = response;
+	struct pending_cmd *cmd_enable = NULL;
+	struct pending_cmd *cmd_disable = NULL;
+	struct mgmt_cp_set_enable_rssi *cp_en;
+	struct mgmt_cp_disable_rssi *cp_dis;
+
+	hci_dev_lock(hdev);
+	cmd_enable = mgmt_pending_find(MGMT_OP_SET_RSSI_ENABLE, hdev);
+	cmd_disable = mgmt_pending_find(MGMT_OP_SET_RSSI_DISABLE, hdev);
+	hci_dev_unlock(hdev);
+
+	if(cmd_enable)
+		BT_DBG("Enable Request");
+
+	if(cmd_disable)
+		BT_DBG("Disable Request");
+
+	if (cmd_enable) {
+		cp_en = cmd_enable->param;
+
+		if (status != 0x00)
+			return;
+
+		switch (rp->le_ext_opcode) {
+		case 0x01:
+			BT_DBG("RSSI enabled.. Setting Threshold...");
+			mgmt_set_rssi_threshold(cmd_enable->sk, hdev,
+					cp_en, sizeof(*cp_en));
+			break;
+
+		case 0x0B:
+			BT_DBG("Sending RSSI enable success");
+			mgmt_rssi_enable_success(cmd_enable->sk, hdev,
+					cp_en, rp, rp->status);
+			break;
+		}
+
+	} else if (cmd_disable) {
+		cp_dis = cmd_disable->param;
+
+		if (status != 0x00)
+			return;
+
+		switch (rp->le_ext_opcode) {
+		case 0x01:
+			BT_DBG("Sending RSSI disable success");
+			mgmt_rssi_disable_success(cmd_disable->sk, hdev,
+					cp_dis, rp, rp->status);
+			break;
+
+		case 0x0B:
+			/* Only unset RSSI Threshold values for the Link if
+			   RSSI is monitored for other BREDR or LE Links*/
+			if (hci_conn_hash_lookup_rssi_count(hdev) > 1) {
+				BT_DBG("Unset Threshold. Other links being monitored");
+				mgmt_rssi_disable_success(cmd_disable->sk, hdev,
+						cp_dis, rp, rp->status);
+			} else {
+				BT_DBG("Unset Threshold. Disabling...");
+				mgmt_set_disable_rssi(cmd_disable->sk, hdev,
+						cp_dis, sizeof(*cp_dis));
+			}
+			break;
+		}
+	}
+}
+
+static void set_rssi_enable_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	BT_DBG("status 0x%02x", status);
+}
+
+static int set_enable_rssi(struct sock *sk, struct hci_dev *hdev,
+		void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	struct mgmt_cp_set_enable_rssi *cp = data;
+	struct hci_cp_set_enable_rssi cp_en = { 0, };
+	int err;
+	BT_DBG("Set Enable RSSI.");
+
+	cp_en.hci_le_ext_opcode = 0x01;
+	cp_en.le_enable_cs_Features = 0x04;
+	cp_en.data[0] = 0x00;
+	cp_en.data[1] = 0x00;
+	cp_en.data[2] = 0x00;
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_RSSI_ENABLE,
+				MGMT_STATUS_NOT_SUPPORTED);
+
+	hci_dev_lock(hdev);
+	if (!hdev_is_powered(hdev)) {
+		BT_DBG("%s", hdev->name);
+		err = cmd_complete(sk, hdev->id, MGMT_OP_SET_RSSI_ENABLE, 0,
+				   data, len);
+
+		goto unlocked;
+	}
+
+	if (mgmt_pending_find(MGMT_OP_SET_RSSI_ENABLE, hdev)) {
+		BT_DBG("%s", hdev->name);
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_RSSI_ENABLE,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_SET_RSSI_ENABLE, hdev, cp, sizeof(*cp));
+	if (!cmd) {
+		BT_DBG("%s", hdev->name);
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	/* If RSSI is already enabled directly set Threshold values*/
+	if (hci_conn_hash_lookup_rssi_count(hdev) > 0) {
+		hci_dev_unlock(hdev);
+		BT_DBG("RSSI Enabled. Directly set Threshold");
+		err = mgmt_set_rssi_threshold(sk, hdev, cp, sizeof(*cp));
+		return err;
+	}
+
+	hci_req_init(&req, hdev);
+
+	BT_DBG("Enable Len: %d [%2.2X %2.2X %2.2X %2.2X %2.2X]",
+			sizeof(struct hci_cp_set_enable_rssi),
+			cp_en.hci_le_ext_opcode, cp_en.le_enable_cs_Features,
+			cp_en.data[0], cp_en.data[1], cp_en.data[2]);
+
+	hci_req_add(&req, HCI_OP_ENABLE_RSSI, sizeof(cp_en), &cp_en);
+	err = hci_req_run(&req, set_rssi_enable_complete);
+
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		BT_ERR("Error in requesting hci_req_run");
+		goto unlocked;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static void get_raw_rssi_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_GET_RAW_RSSI, hdev);
+	if (!cmd)
+		goto unlock;
+
+	cmd_complete(cmd->sk, hdev->id, MGMT_OP_GET_RAW_RSSI, MGMT_STATUS_SUCCESS,
+			&status, 1);
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int get_raw_rssi(struct sock *sk, struct hci_dev *hdev, void *data,
+			u16 len)
+{
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	struct mgmt_cp_get_raw_rssi *cp = data;
+	struct hci_cp_get_raw_rssi hci_cp;
+
+	struct hci_conn *conn;
+	int err;
+	__u8 dest_type;
+
+	BT_DBG("Get Raw RSSI.");
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_GET_RAW_RSSI,
+				MGMT_STATUS_NOT_SUPPORTED);
+
+	hci_dev_lock(hdev);
+
+	if (cp->link_type == 0x01) {
+		dest_type = LE_LINK;
+	} else {
+		dest_type = ACL_LINK;
+	}
+
+	/* Get LE/BREDR link handle info*/
+	conn = hci_conn_hash_lookup_ba(hdev,
+			dest_type, &cp->bt_address);
+	if (conn == NULL) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_GET_RAW_RSSI, 1,
+						   data, len);
+		goto unlocked;
+	}
+	hci_cp.conn_handle = conn->handle;
+
+	if (!hdev_is_powered(hdev)) {
+		BT_DBG("%s", hdev->name);
+		err = cmd_complete(sk, hdev->id, MGMT_OP_GET_RAW_RSSI, 0,
+				   data, len);
+
+		goto unlocked;
+	}
+
+	if (mgmt_pending_find(MGMT_OP_GET_RAW_RSSI, hdev)) {
+		BT_DBG("%s", hdev->name);
+		err = cmd_status(sk, hdev->id, MGMT_OP_GET_RAW_RSSI,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_GET_RAW_RSSI, hdev, data, len);
+	if (!cmd) {
+		BT_DBG("%s", hdev->name);
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	BT_DBG("Connection Handle [%d]", hci_cp.conn_handle);
+	hci_req_add(&req, HCI_OP_GET_RAW_RSSI, sizeof(hci_cp), &hci_cp);
+	err = hci_req_run(&req, get_raw_rssi_complete);
+
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		BT_ERR("Error in requesting hci_req_run");
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+void mgmt_raw_rssi_response(struct hci_dev *hdev,
+		struct hci_cc_rp_get_raw_rssi *rp, int success)
+{
+	struct mgmt_cc_rp_get_raw_rssi mgmt_rp = { 0, };
+	struct hci_conn *conn;
+
+	mgmt_rp.status = rp->status;
+	mgmt_rp.rssi_dbm = rp->rssi_dbm;
+
+	conn = hci_conn_hash_lookup_handle(hdev, rp->conn_handle);
+	if (conn == NULL)
+		return;
+
+	bacpy(&mgmt_rp.bt_address, &conn->dst);
+	if (conn->type == LE_LINK) {
+		mgmt_rp.link_type = 0x01;
+	} else {
+		mgmt_rp.link_type = 0x00;
+	}
+
+	mgmt_event(MGMT_EV_RAW_RSSI, hdev, &mgmt_rp,
+			sizeof(struct mgmt_cc_rp_get_raw_rssi), NULL);
+}
+
+static void set_disable_threshold_complete(struct hci_dev *hdev,
+			u8 status, u16 opcode)
+{
+	BT_DBG("status 0x%02x", status);
+}
+
+/** Removes monitoring for a link*/
+static int set_disable_threshold(struct sock *sk, struct hci_dev *hdev,
+		void *data, u16 len)
+{
+	int err = 0;
+	struct hci_cp_set_rssi_threshold th = { 0, };
+	struct mgmt_cp_disable_rssi *cp = data;
+	struct hci_conn *conn;
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	__u8 dest_type;
+	BT_DBG("Set Disable RSSI.");
+
+	if (!lmp_le_capable(hdev)) {
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_RSSI_DISABLE,
+				MGMT_STATUS_NOT_SUPPORTED);
+	}
+
+	hci_dev_lock(hdev);
+
+	/* Get LE/ACL link handle info*/
+	if (cp->link_type == 0x01)
+		dest_type = LE_LINK;
+	else
+		dest_type = ACL_LINK;
+
+	conn = hci_conn_hash_lookup_ba(hdev,
+			dest_type, &cp->bdaddr);
+	if (conn == NULL) {
+		err = cmd_complete(sk, hdev->id,
+				MGMT_OP_SET_RSSI_DISABLE, 1, NULL, 0);
+		goto unlocked;
+	}
+
+	th.hci_le_ext_opcode = 0x0B;
+	th.mode = 0x01;
+	th.conn_handle = conn->handle;
+	th.alert_mask = 0x00;
+	th.low_th = 0x00;
+	th.in_range_th = 0x00;
+	th.high_th = 0x00;
+
+	if (!hdev_is_powered(hdev)) {
+		BT_DBG("%s", hdev->name);
+		err = cmd_complete(sk, hdev->id, MGMT_OP_SET_RSSI_DISABLE, 0,
+				   data, len);
+		goto unlocked;
+	}
+
+	if (mgmt_pending_find(MGMT_OP_SET_RSSI_DISABLE, hdev)) {
+		BT_DBG("%s", hdev->name);
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_RSSI_DISABLE,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_SET_RSSI_DISABLE, hdev, cp, sizeof(*cp));
+	if (!cmd) {
+		BT_DBG("%s", hdev->name);
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	hci_req_add(&req, HCI_OP_ENABLE_RSSI, sizeof(th), &th);
+	err = hci_req_run(&req, set_disable_threshold_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		BT_ERR("Error in requesting hci_req_run");
+		goto unlocked;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+void mgmt_rssi_alert_evt(struct hci_dev *hdev, struct sk_buff *skb)
+{
+	struct hci_ev_vendor_specific_rssi_alert *ev = (void *) skb->data;
+	struct mgmt_ev_vendor_specific_rssi_alert mgmt_ev;
+	struct hci_conn *conn;
+
+	BT_DBG("RSSI alert [%2.2X %2.2X %2.2X]",
+			ev->conn_handle, ev->alert_type, ev->rssi_dbm);
+
+	conn = hci_conn_hash_lookup_handle(hdev, ev->conn_handle);
+
+	if (conn == NULL) {
+		BT_ERR("RSSI alert Error: Device not found for handle");
+		return;
+	}
+	bacpy(&mgmt_ev.bdaddr, &conn->dst);
+
+	if (conn->type == LE_LINK)
+		mgmt_ev.link_type = 0x01;
+	else
+		mgmt_ev.link_type = 0x00;
+
+	mgmt_ev.alert_type = ev->alert_type;
+	mgmt_ev.rssi_dbm = ev->rssi_dbm;
+
+	mgmt_event(MGMT_EV_RSSI_ALERT, hdev, &mgmt_ev,
+			sizeof(struct mgmt_ev_vendor_specific_rssi_alert), NULL);
+}
+
+void mgmt_multi_adv_state_change_evt(struct hci_dev *hdev, struct sk_buff *skb)
+{
+	struct hci_ev_vendor_specific_multi_adv_state *ev = (void *) skb->data;
+	struct mgmt_ev_vendor_specific_multi_adv_state_changed mgmt_ev;
+
+	BT_DBG("Multi adv state changed [%2.2X %2.2X %2.2X]",
+			ev->adv_instance, ev->state_change_reason, ev->connection_handle);
+
+	mgmt_ev.adv_instance = ev->adv_instance;
+	mgmt_ev.state_change_reason = ev->state_change_reason;
+	mgmt_ev.connection_handle = ev->connection_handle;
+
+	mgmt_event(MGMT_EV_MULTI_ADV_STATE_CHANGED, hdev, &mgmt_ev,
+			sizeof(struct mgmt_ev_vendor_specific_multi_adv_state_changed), NULL);
+}
+/* END TIZEN_Bluetooth */
+#endif
 
 static bool ltk_is_valid(struct mgmt_ltk_info *key)
 {
@@ -6163,6 +7853,29 @@ static const struct mgmt_handler {
 	{ start_service_discovery,true,  MGMT_START_SERVICE_DISCOVERY_SIZE },
 };
 
+#ifdef CONFIG_TIZEN_WIP
+static const struct mgmt_handler tizen_mgmt_handlers[] = {
+	{ NULL }, /* 0x0000 (no command) */
+	{ set_advertising_params,  false, MGMT_SET_ADVERTISING_PARAMS_SIZE },
+	{ set_advertising_data,    true, MGMT_SET_ADV_MIN_APP_DATA_SIZE },
+	{ set_scan_rsp_data,       true, MGMT_SET_SCAN_RSP_MIN_APP_DATA_SIZE },
+	{ add_white_list,          false, MGMT_ADD_DEV_WHITE_LIST_SIZE },
+	{ remove_from_white_list,  false, MGMT_REMOVE_DEV_FROM_WHITE_LIST_SIZE },
+	{ clear_white_list,        false, MGMT_OP_CLEAR_DEV_WHITE_LIST_SIZE },
+	{ set_enable_rssi,         false, MGMT_SET_RSSI_ENABLE_SIZE },
+	{ get_raw_rssi,            false, MGMT_GET_RAW_RSSI_SIZE },
+	{ set_disable_threshold,   false, MGMT_SET_RSSI_DISABLE_SIZE },
+	{ start_le_discovery,      false, MGMT_START_LE_DISCOVERY_SIZE },
+	{ stop_le_discovery,       false, MGMT_STOP_LE_DISCOVERY_SIZE },
+	{ disable_le_auto_connect, false, MGMT_DISABLE_LE_AUTO_CONNECT_SIZE },
+	{ le_conn_update,          false, MGMT_LE_CONN_UPDATE_SIZE},
+	{ set_manufacturer_data,   false, MGMT_SET_MANUFACTURER_DATA_SIZE},
+	{ le_set_scan_params,      false, MGMT_LE_SET_SCAN_PARAMS_SIZE },
+	{ set_voice_setting,       false, MGMT_SET_VOICE_SETTING_SIZE},
+	{ get_adv_tx_power,       false, MGMT_GET_ADV_TX_POWER_SIZE}
+};
+#endif
+
 int mgmt_control(struct sock *sk, struct msghdr *msg, size_t msglen)
 {
 	void *buf;
@@ -6225,6 +7938,17 @@ int mgmt_control(struct sock *sk, struct msghdr *msg, size_t msglen)
 
 	if (opcode >= ARRAY_SIZE(mgmt_handlers) ||
 	    mgmt_handlers[opcode].func == NULL) {
+#ifdef CONFIG_TIZEN_WIP
+		u16 tizen_opcode = opcode - TIZEN_OP_CODE_BASE;
+
+		if (tizen_opcode > 0 &&
+		    tizen_opcode < ARRAY_SIZE(tizen_mgmt_handlers) &&
+		    tizen_mgmt_handlers[tizen_opcode].func) {
+
+		    handler = &tizen_mgmt_handlers[tizen_opcode];
+		    goto handle_mgmt;
+		}
+#endif
 		BT_DBG("Unknown op %u", opcode);
 		err = cmd_status(sk, index, opcode,
 				 MGMT_STATUS_UNKNOWN_COMMAND);
@@ -6247,6 +7971,9 @@ int mgmt_control(struct sock *sk, struct msghdr *msg, size_t msglen)
 
 	handler = &mgmt_handlers[opcode];
 
+#ifdef CONFIG_TIZEN_WIP
+handle_mgmt:
+#endif
 	if ((handler->var_len && len < handler->data_len) ||
 	    (!handler->var_len && len != handler->data_len)) {
 		err = cmd_status(sk, index, opcode,
@@ -6729,6 +8456,32 @@ void mgmt_device_connected(struct hci_dev *hdev, struct hci_conn *conn,
 		    sizeof(*ev) + eir_len, NULL);
 }
 
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: name update changes */
+int mgmt_device_name_update(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 *name,
+			    u8 name_len)
+{
+	char buf[512];
+	struct mgmt_ev_device_name_update *ev = (void *) buf;
+	u16 eir_len = 0;
+
+	if (name_len <= 0)
+		return -EINVAL;
+
+	bacpy(&ev->addr.bdaddr, bdaddr);
+	ev->addr.type = BDADDR_BREDR;
+
+	eir_len = eir_append_data(ev->eir, 0, EIR_NAME_COMPLETE, name,
+				  name_len);
+
+	ev->eir_len = cpu_to_le16(eir_len);
+
+	return mgmt_event(MGMT_EV_DEVICE_NAME_UPDATE, hdev, buf,
+			  sizeof(*ev) + eir_len, NULL);
+}
+/* END TIZEN_Bluetooth :: name update changes */
+#endif
+
 static void disconnect_rsp(struct pending_cmd *cmd, void *data)
 {
 	struct sock **sk = data;
@@ -6849,6 +8602,20 @@ void mgmt_connect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 
 	mgmt_event(MGMT_EV_CONNECT_FAILED, hdev, &ev, sizeof(ev), NULL);
 }
+#ifdef CONFIG_TIZEN_WIP
+void mgmt_hardware_error(struct hci_dev *hdev, u8 err_code)
+{
+	struct mgmt_ev_hardware_error ev;
+
+	ev.error_code = err_code;
+	mgmt_event(MGMT_EV_HARDWARE_ERROR, hdev, &ev, sizeof(ev), NULL);
+}
+
+void mgmt_tx_timeout_error(struct hci_dev *hdev)
+{
+	mgmt_event(MGMT_EV_TX_TIMEOUT_ERROR, hdev, NULL, 0, NULL);
+}
+#endif
 
 void mgmt_pin_code_request(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 secure)
 {
@@ -7168,21 +8935,28 @@ void mgmt_read_local_oob_data_complete(struct hci_dev *hdev, u8 *hash192,
 		cmd_status(cmd->sk, hdev->id, MGMT_OP_READ_LOCAL_OOB_DATA,
 			   mgmt_status(status));
 	} else {
-		struct mgmt_rp_read_local_oob_data rp;
-		size_t rp_size = sizeof(rp);
-
-		memcpy(rp.hash192, hash192, sizeof(rp.hash192));
-		memcpy(rp.rand192, rand192, sizeof(rp.rand192));
-
 		if (bredr_sc_enabled(hdev) && hash256 && rand256) {
+			struct mgmt_rp_read_local_oob_ext_data rp;
+
+			memcpy(rp.hash192, hash192, sizeof(rp.hash192));
+			memcpy(rp.rand192, rand192, sizeof(rp.rand192));
+
 			memcpy(rp.hash256, hash256, sizeof(rp.hash256));
 			memcpy(rp.rand256, rand256, sizeof(rp.rand256));
-		} else {
-			rp_size -= sizeof(rp.hash256) + sizeof(rp.rand256);
-		}
 
-		cmd_complete(cmd->sk, hdev->id, MGMT_OP_READ_LOCAL_OOB_DATA, 0,
-			     &rp, rp_size);
+			cmd_complete(cmd->sk, hdev->id,
+				     MGMT_OP_READ_LOCAL_OOB_DATA, 0,
+				     &rp, sizeof(rp));
+		} else {
+			struct mgmt_rp_read_local_oob_data rp;
+
+			memcpy(rp.hash, hash192, sizeof(rp.hash));
+			memcpy(rp.rand, rand192, sizeof(rp.rand));
+
+			cmd_complete(cmd->sk, hdev->id,
+				     MGMT_OP_READ_LOCAL_OOB_DATA, 0,
+				     &rp, sizeof(rp));
+		}
 	}
 
 	mgmt_pending_remove(cmd);
@@ -7255,21 +9029,6 @@ static bool eir_has_uuids(u8 *eir, u16 eir_len, u16 uuid_count, u8 (*uuids)[16])
 	return false;
 }
 
-static void restart_le_scan(struct hci_dev *hdev)
-{
-	/* If controller is not scanning we are done. */
-	if (!test_bit(HCI_LE_SCAN, &hdev->dev_flags))
-		return;
-
-	if (time_after(jiffies + DISCOV_LE_RESTART_DELAY,
-		       hdev->discovery.scan_start +
-		       hdev->discovery.scan_duration))
-		return;
-
-	queue_delayed_work(hdev->workqueue, &hdev->le_scan_restart,
-			   DISCOV_LE_RESTART_DELAY);
-}
-
 void mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 		       u8 addr_type, u8 *dev_class, s8 rssi, u32 flags,
 		       u8 *eir, u16 eir_len, u8 *scan_rsp, u8 scan_rsp_len)
@@ -7292,18 +9051,14 @@ void mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 
 	/* When using service discovery with a RSSI threshold, then check
 	 * if such a RSSI threshold is specified. If a RSSI threshold has
-	 * been specified, and HCI_QUIRK_STRICT_DUPLICATE_FILTER is not set,
-	 * then all results with a RSSI smaller than the RSSI threshold will be
-	 * dropped. If the quirk is set, let it through for further processing,
-	 * as we might need to restart the scan.
+	 * been specified, then all results with a RSSI smaller than the
+	 * RSSI threshold will be dropped.
 	 *
 	 * For BR/EDR devices (pre 1.2) providing no RSSI during inquiry,
 	 * the results are also dropped.
 	 */
 	if (hdev->discovery.rssi != HCI_RSSI_INVALID &&
-	    (rssi == HCI_RSSI_INVALID ||
-	    (rssi < hdev->discovery.rssi &&
-	     !test_bit(HCI_QUIRK_STRICT_DUPLICATE_FILTER, &hdev->quirks))))
+	    (rssi < hdev->discovery.rssi || rssi == HCI_RSSI_INVALID))
 		return;
 
 	/* Make sure that the buffer is big enough. The 5 extra bytes
@@ -7338,20 +9093,12 @@ void mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 		 * kept and checking possible scan response data
 		 * will be skipped.
 		 */
-		if (hdev->discovery.uuid_count > 0) {
+		if (hdev->discovery.uuid_count > 0)
 			match = eir_has_uuids(eir, eir_len,
 					      hdev->discovery.uuid_count,
 					      hdev->discovery.uuids);
-			/* If duplicate filtering does not report RSSI changes,
-			 * then restart scanning to ensure updated result with
-			 * updated RSSI values.
-			 */
-			if (match && test_bit(HCI_QUIRK_STRICT_DUPLICATE_FILTER,
-					      &hdev->quirks))
-				restart_le_scan(hdev);
-		} else {
+		else
 			match = true;
-		}
 
 		if (!match && !scan_rsp_len)
 			return;
@@ -7384,14 +9131,6 @@ void mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 						     hdev->discovery.uuid_count,
 						     hdev->discovery.uuids))
 				return;
-
-			/* If duplicate filtering does not report RSSI changes,
-			 * then restart scanning to ensure updated result with
-			 * updated RSSI values.
-			 */
-			if (test_bit(HCI_QUIRK_STRICT_DUPLICATE_FILTER,
-				     &hdev->quirks))
-				restart_le_scan(hdev);
 		}
 
 		/* Append scan response data to event */
@@ -7405,19 +9144,54 @@ void mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 			return;
 	}
 
-	/* Validate the reported RSSI value against the RSSI threshold once more
-	 * incase HCI_QUIRK_STRICT_DUPLICATE_FILTER forced a restart of LE
-	 * scanning.
-	 */
-	if (hdev->discovery.rssi != HCI_RSSI_INVALID &&
-	    rssi < hdev->discovery.rssi)
-		return;
-
 	ev->eir_len = cpu_to_le16(eir_len + scan_rsp_len);
 	ev_size = sizeof(*ev) + eir_len + scan_rsp_len;
 
 	mgmt_event(MGMT_EV_DEVICE_FOUND, hdev, ev, ev_size, NULL);
 }
+
+#ifdef CONFIG_TIZEN_WIP /* TIZEN_Bluetooth :: Pass adv type */
+void mgmt_le_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
+		       u8 addr_type, u8 *dev_class, s8 rssi, u32 flags,
+		       u8 *eir, u16 eir_len, u8 *scan_rsp, u8 scan_rsp_len, u8 adv_type)
+{
+	char buf[512];
+	struct mgmt_ev_le_device_found *ev = (void *) buf;
+	size_t ev_size;
+
+	if (!hci_discovery_active(hdev) && !hci_le_discovery_active(hdev))
+		return;
+
+	/* Make sure that the buffer is big enough. The 5 extra bytes
+	 * are for the potential CoD field.
+	 */
+	if (sizeof(*ev) + eir_len + scan_rsp_len + 5 > sizeof(buf))
+		return;
+
+	memset(buf, 0, sizeof(buf));
+
+	bacpy(&ev->addr.bdaddr, bdaddr);
+	ev->addr.type = link_to_bdaddr(link_type, addr_type);
+	ev->rssi = rssi;
+	ev->flags = cpu_to_le32(flags);
+	ev->adv_type = adv_type;
+
+	if (eir_len > 0)
+		memcpy(ev->eir, eir, eir_len);
+
+	if (dev_class && !eir_has_data_type(ev->eir, eir_len, EIR_CLASS_OF_DEV))
+		eir_len = eir_append_data(ev->eir, eir_len, EIR_CLASS_OF_DEV,
+					  dev_class, 3);
+
+	if (scan_rsp_len > 0)
+		memcpy(ev->eir + eir_len, scan_rsp, scan_rsp_len);
+
+	ev->eir_len = cpu_to_le16(eir_len + scan_rsp_len);
+	ev_size = sizeof(*ev) + eir_len + scan_rsp_len;
+
+	mgmt_event(MGMT_EV_LE_DEVICE_FOUND, hdev, ev, ev_size, NULL);
+}
+#endif
 
 void mgmt_remote_name(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 		      u8 addr_type, s8 rssi, u8 *name, u8 name_len)
@@ -7454,6 +9228,37 @@ void mgmt_discovering(struct hci_dev *hdev, u8 discovering)
 
 	mgmt_event(MGMT_EV_DISCOVERING, hdev, &ev, sizeof(ev), NULL);
 }
+
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Seperate LE discovery */
+void mgmt_le_discovering(struct hci_dev *hdev, u8 discovering)
+{
+	struct mgmt_ev_discovering ev;
+	struct pending_cmd *cmd;
+
+	BT_DBG("%s le discovering %u", hdev->name, discovering);
+
+	if (discovering)
+		cmd = mgmt_pending_find(MGMT_OP_START_LE_DISCOVERY, hdev);
+	else
+		cmd = mgmt_pending_find(MGMT_OP_STOP_LE_DISCOVERY, hdev);
+
+	if (cmd != NULL) {
+		u8 type = hdev->le_discovery.type;
+
+		cmd_complete(cmd->sk, hdev->id, cmd->opcode, 0, &type,
+			     sizeof(type));
+		mgmt_pending_remove(cmd);
+	}
+
+	memset(&ev, 0, sizeof(ev));
+	ev.type = hdev->le_discovery.type;
+	ev.discovering = discovering;
+
+	mgmt_event(MGMT_EV_DISCOVERING, hdev, &ev, sizeof(ev), NULL);
+}
+/* END TIZEN_Bluetooth */
+#endif
 
 static void adv_enable_complete(struct hci_dev *hdev, u8 status, u16 opcode)
 {

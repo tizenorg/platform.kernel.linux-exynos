@@ -34,6 +34,9 @@
 #define PF_BLUETOOTH	AF_BLUETOOTH
 #endif
 
+/* To enable tizen specific fixes in kernel*/
+#define CONFIG_TIZEN_WIP
+
 /* Bluetooth versions */
 #define BLUETOOTH_VER_1_1	1
 #define BLUETOOTH_VER_1_2	2
@@ -173,6 +176,11 @@ typedef struct {
 	__u8 b[6];
 } __packed bdaddr_t;
 
+#ifdef CONFIG_TIZEN_WIP
+/* automatically enable sniff mode for connection */
+/* in case of normal phone this timeout would be 5 seconds */
+#define TIZEN_SNIFF_TIMEOUT	5	/*5 second*/
+#endif
 /* BD Address type */
 #define BDADDR_BREDR		0x00
 #define BDADDR_LE_PUBLIC	0x01
