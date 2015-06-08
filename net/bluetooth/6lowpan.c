@@ -1045,6 +1045,9 @@ static const struct l2cap_ops bt_6lowpan_chan_ops = {
 	.suspend		= chan_suspend_cb,
 	.get_sndtimeo		= chan_get_sndtimeo_cb,
 	.alloc_skb		= chan_alloc_skb_cb,
+#ifdef CONFIG_TIZEN_WIP
+	.memcpy_fromiovec	= l2cap_chan_no_memcpy_fromiovec,
+#endif
 
 	.teardown		= l2cap_chan_no_teardown,
 	.defer			= l2cap_chan_no_defer,

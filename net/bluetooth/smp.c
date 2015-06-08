@@ -540,7 +540,6 @@ static void smp_send_cmd(struct l2cap_conn *conn, u8 code, u16 len, void *data)
 	iv[1].iov_len = len;
 
 	memset(&msg, 0, sizeof(msg));
-
 	iov_iter_kvec(&msg.msg_iter, WRITE | ITER_KVEC, iv, 2, 1 + len);
 
 	l2cap_chan_send(chan, &msg, 1 + len);
@@ -620,7 +619,7 @@ static void build_pairing_cmd(struct l2cap_conn *conn,
 
 		oob_data = hci_find_remote_oob_data(hdev, &hcon->dst,
 						    bdaddr_type);
-		if (oob_data && oob_data->present) {
+		if (oob_data) {
 			set_bit(SMP_FLAG_OOB, &smp->flags);
 			oob_flag = SMP_OOB_PRESENT;
 			memcpy(smp->rr, oob_data->rand256, 16);
