@@ -32,3 +32,7 @@ hci_uart-$(CONFIG_BT_HCIUART_3WIRE)	+= hci_h5.o
 hci_uart-objs				:= $(hci_uart-y)
 
 ccflags-y += -D__CHECK_ENDIAN__
+ifeq ($(CONFIG_BCM_BT_LPM),y)
+else
+obj-$(CONFIG_BT_BCM4330) += brcm_rfkill.o
+endif

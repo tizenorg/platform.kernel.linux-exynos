@@ -40,6 +40,20 @@ struct sco_param {
 	u16 max_latency;
 	u8  retrans_effort;
 };
+#ifdef CONFIG_TIZEN_WIP
+static const struct sco_param esco_param_cvsd[] = {
+	{ (EDR_ESCO_MASK & ~ESCO_2EV3) | SCO_ESCO_MASK | ESCO_EV3 , 0x000a, 0x01 }, /* S3 */
+	{ EDR_ESCO_MASK & ~ESCO_2EV3, 0x0007,	0x01 }, /* S2 */
+	{ EDR_ESCO_MASK | ESCO_EV3,   0x0007,	0x01 }, /* S1 */
+	{ EDR_ESCO_MASK | ESCO_HV3,   0xffff,	0x01 }, /* D1 */
+	{ EDR_ESCO_MASK | ESCO_HV1,   0xffff,	0x01 }, /* D0 */
+};
+
+static const struct sco_param esco_param_msbc[] = {
+	{ (EDR_ESCO_MASK & ~ESCO_2EV3) | ESCO_EV3, 0x000d, 0x02 }, /* T2 */
+	{ EDR_ESCO_MASK | ESCO_EV3,   0x0008,	0x02 }, /* T1 */
+};
+#else
 
 static const struct sco_param esco_param_cvsd[] = {
 	{ EDR_ESCO_MASK & ~ESCO_2EV3, 0x000a,	0x01 }, /* S3 */
@@ -49,14 +63,15 @@ static const struct sco_param esco_param_cvsd[] = {
 	{ EDR_ESCO_MASK | ESCO_HV1,   0xffff,	0x01 }, /* D0 */
 };
 
-static const struct sco_param sco_param_cvsd[] = {
-	{ EDR_ESCO_MASK | ESCO_HV3,   0xffff,	0xff }, /* D1 */
-	{ EDR_ESCO_MASK | ESCO_HV1,   0xffff,	0xff }, /* D0 */
-};
-
 static const struct sco_param esco_param_msbc[] = {
 	{ EDR_ESCO_MASK & ~ESCO_2EV3, 0x000d,	0x02 }, /* T2 */
 	{ EDR_ESCO_MASK | ESCO_EV3,   0x0008,	0x02 }, /* T1 */
+};
+#endif
+
+static const struct sco_param sco_param_cvsd[] = {
+	{ EDR_ESCO_MASK | ESCO_HV3,   0xffff,	0xff }, /* D1 */
+	{ EDR_ESCO_MASK | ESCO_HV1,   0xffff,	0xff }, /* D0 */
 };
 
 static void hci_le_create_connection_cancel(struct hci_conn *conn)
@@ -340,7 +355,12 @@ static void hci_conn_timeout(struct work_struct *work)
 		if (conn->out) {
 			if (conn->type == ACL_LINK)
 				hci_acl_create_connection_cancel(conn);
+#ifdef CONFIG_TIZEN_WIP
+			else if (conn->type == LE_LINK &&
+					bacmp(&conn->dst, BDADDR_ANY))
+#else
 			else if (conn->type == LE_LINK)
+#endif
 				hci_le_create_connection_cancel(conn);
 		} else if (conn->type == SCO_LINK || conn->type == ESCO_LINK) {
 			hci_reject_sco(conn);
@@ -454,6 +474,11 @@ struct hci_conn *hci_conn_add(struct hci_dev *hdev, int type, bdaddr_t *dst,
 	conn->rssi = HCI_RSSI_INVALID;
 	conn->tx_power = HCI_TX_POWER_INVALID;
 	conn->max_tx_power = HCI_TX_POWER_INVALID;
+
+#ifdef CONFIG_TIZEN_WIP
+	/* enable sniff mode for incoming connection */
+	conn->link_policy = hdev->link_policy;
+#endif
 
 	set_bit(HCI_CONN_POWER_SAVE, &conn->flags);
 	conn->disc_timeout = HCI_DISCONN_TIMEOUT;
@@ -672,7 +697,15 @@ static void hci_req_add_le_create_conn(struct hci_request *req,
 
 	cp.scan_interval = cpu_to_le16(hdev->le_scan_interval);
 	cp.scan_window = cpu_to_le16(hdev->le_scan_window);
+#ifdef CONFIG_TIZEN_WIP
+/* LE auto connect */
+	if (!bacmp(&conn->dst, BDADDR_ANY))
+		cp.filter_policy = 0x1;
+	else
+		bacpy(&cp.peer_addr, &conn->dst);
+#else
 	bacpy(&cp.peer_addr, &conn->dst);
+#endif
 	cp.peer_addr_type = conn->dst_type;
 	cp.own_address_type = own_addr_type;
 	cp.conn_interval_min = cpu_to_le16(conn->le_conn_min_interval);
@@ -1083,7 +1116,22 @@ int hci_conn_check_secure(struct hci_conn *conn, __u8 sec_level)
 	return 0;
 }
 EXPORT_SYMBOL(hci_conn_check_secure);
+#ifdef CONFIG_TIZEN_WIP
+/* Change link key */
+int hci_conn_change_link_key(struct hci_conn *conn)
+{
+	BT_DBG("hcon %p", conn);
 
+	if (!test_and_set_bit(HCI_CONN_AUTH_PEND, &conn->flags)) {
+		struct hci_cp_change_conn_link_key cp;
+		cp.handle = cpu_to_le16(conn->handle);
+		hci_send_cmd(conn->hdev, HCI_OP_CHANGE_CONN_LINK_KEY,
+			     sizeof(cp), &cp);
+	}
+
+	return 0;
+}
+#endif
 /* Switch role */
 int hci_conn_switch_role(struct hci_conn *conn, __u8 role)
 {
@@ -1102,6 +1150,30 @@ int hci_conn_switch_role(struct hci_conn *conn, __u8 role)
 	return 0;
 }
 EXPORT_SYMBOL(hci_conn_switch_role);
+
+#ifdef CONFIG_TIZEN_WIP
+/* Change supervision timeout */
+int hci_conn_change_supervision_timeout(struct hci_conn *conn, __u16 timeout)
+{
+	struct hci_cp_write_link_supervision_timeout cp;
+
+	if (!((get_link_mode(conn)) & HCI_LM_MASTER))
+		return 1;
+
+	if (conn->handle == 0)
+		return 1;
+
+	memset(&cp, 0, sizeof(cp));
+	cp.handle  = cpu_to_le16(conn->handle);
+	cp.timeout = cpu_to_le16(timeout);
+
+	if (hci_send_cmd(conn->hdev, HCI_OP_WRITE_LINK_SUPERVISION_TIMEOUT,
+		     sizeof(cp), &cp) < 0)
+		BT_ERR("HCI_OP_WRITE_LINK_SUPERVISION_TIMEOUT is failed");
+
+	return 0;
+}
+#endif
 
 /* Enter active mode */
 void hci_conn_enter_active_mode(struct hci_conn *conn, __u8 force_active)
@@ -1123,9 +1195,17 @@ void hci_conn_enter_active_mode(struct hci_conn *conn, __u8 force_active)
 	}
 
 timer:
+#ifdef CONFIG_TIZEN_WIP /* Sniff timer cancel */
+	if (hdev->idle_timeout > 0) {
+		cancel_delayed_work(&conn->idle_work);
+		queue_delayed_work(hdev->workqueue, &conn->idle_work,
+				   msecs_to_jiffies(hdev->idle_timeout));
+	}
+#else
 	if (hdev->idle_timeout > 0)
 		queue_delayed_work(hdev->workqueue, &conn->idle_work,
 				   msecs_to_jiffies(hdev->idle_timeout));
+#endif /* Sniff timer cancel */
 }
 
 /* Drop all connection on the device */
@@ -1160,7 +1240,11 @@ void hci_conn_check_pending(struct hci_dev *hdev)
 	hci_dev_unlock(hdev);
 }
 
+#ifndef CONFIG_TIZEN_WIP
 static u32 get_link_mode(struct hci_conn *conn)
+#else
+u32 get_link_mode(struct hci_conn *conn)
+#endif
 {
 	u32 link_mode = 0;
 
