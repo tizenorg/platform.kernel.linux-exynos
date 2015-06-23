@@ -41,6 +41,7 @@
 #include <linux/msg.h>
 #include <linux/shm.h>
 #include <linux/binfmts.h>
+#include <kdbus/connection.h>
 #include "smack.h"
 
 #define TRANS_TRUE	"TRUE"
@@ -3304,6 +3305,65 @@ static int smack_setprocattr(struct task_struct *p, char *name,
 }
 
 /**
+ * smack_kdbus_connect - Set the security blob for a KDBus connection
+ * @conn: the connection
+ * @secctx: smack label
+ * @seclen: smack label length
+ *
+ * Returns 0
+ */
+static int smack_kdbus_connect(struct kdbus_conn *conn,
+			       const char *secctx, u32 seclen)
+{
+	struct smack_known *skp;
+
+	if (secctx && seclen > 0)
+		skp = smk_import_entry(secctx, seclen);
+	else
+		skp = smk_of_current();
+	conn->security = skp;
+
+	return 0;
+}
+
+/**
+ * smack_kdbus_conn_free - Clear the security blob for a KDBus connection
+ * @conn: the connection
+ *
+ * Clears the blob pointer
+ */
+static void smack_kdbus_conn_free(struct kdbus_conn *conn)
+{
+	conn->security = NULL;
+}
+
+/**
+ * smack_kdbus_talk - Smack access on KDBus
+ * @src: source kdbus connection
+ * @dst: destination kdbus connection
+ *
+ * Return 0 if a subject with the smack of sock could access
+ * an object with the smack of other, otherwise an error code
+ */
+static int smack_kdbus_talk(const struct kdbus_conn *src,
+			    const struct kdbus_conn *dst)
+{
+	struct smk_audit_info ad;
+	struct smack_known *sskp = src->security;
+	struct smack_known *dskp = dst->security;
+
+	BUG_ON(sskp == NULL);
+	BUG_ON(dskp == NULL);
+
+	if (smack_privileged(CAP_MAC_OVERRIDE))
+		return 0;
+
+	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_NONE);
+
+	return smk_access(sskp, dskp, MAY_WRITE, &ad);
+}
+
+/**
  * smack_unix_stream_connect - Smack access on UDS
  * @sock: one sock
  * @other: the other sock
@@ -4289,6 +4349,10 @@ struct security_operations smack_ops = {
 
 	.getprocattr = 			smack_getprocattr,
 	.setprocattr = 			smack_setprocattr,
+
+	.kdbus_connect =		smack_kdbus_connect,
+	.kdbus_conn_free =		smack_kdbus_conn_free,
+	.kdbus_talk =			smack_kdbus_talk,
 
 	.unix_stream_connect = 		smack_unix_stream_connect,
 	.unix_may_send = 		smack_unix_may_send,
