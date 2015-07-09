@@ -1,3 +1,6 @@
+%bcond_with kdbus
+%define release_flags %{?with_kdbus:+kdbus}
+
 %define config_name odroidxu3_defconfig
 %define buildarch arm
 %define target_board odroidxu3
@@ -6,7 +9,7 @@
 Name: odroid-linux-kernel
 Summary: The Linux Kernel for ODROID XU3
 Version: 4.0
-Release: 0
+Release: 0%{?release_flags}
 License: GPL-2.0
 ExclusiveArch: %{arm}
 Group: System/Kernel
@@ -51,6 +54,9 @@ sed -i "s/^EXTRAVERSION.*/EXTRAVERSION = -%{release}-%{variant}/" Makefile
 
 # 1. Compile sources
 make %{config_name}
+%if %{with kdbus}
+scripts/config -e KDBUS --refresh
+%endif
 make %{?_smp_mflags}
 
 # 2. Build zImage
