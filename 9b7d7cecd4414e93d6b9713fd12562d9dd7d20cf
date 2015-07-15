@@ -1,0 +1,8 @@
+Verified+1: Paul Osmialowski <p.osmialowsk@samsung.com>
+Code-Review+2: Marek Szyprowski <m.szyprowski@samsung.com>
+Verified+1: Marek Szyprowski <m.szyprowski@samsung.com>
+Submitted-by: Marek Szyprowski <m.szyprowski@samsung.com>
+Submitted-at: Wed, 15 Jul 2015 01:47:26 -0700
+Reviewed-on: https://review.tizen.org/gerrit/43507
+Project: platform/kernel/linux-exynos
+Branch: refs/heads/kdbus-integration
