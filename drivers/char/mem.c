@@ -801,10 +801,21 @@ static const struct memdev {
 	 [7] = { "full", 0666, &full_fops, 0 },
 	 [8] = { "random", 0666, &random_fops, 0 },
 	 [9] = { "urandom", 0666, &urandom_fops, 0 },
-#ifdef CONFIG_PRINTK
-	[11] = { "kmsg", 0644, &kmsg_fops, 0 },
-#endif
 };
+
+#ifdef CONFIG_PRINTK
+#define KMSG_MINOR	11
+#endif
+
+static int memory_open_kmsg(struct inode *inode, struct file *filp)
+{
+#ifdef CONFIG_PRINTK
+	filp->f_op = &kmsg_fops;
+	return kmsg_fops.open(inode, filp);
+#else
+	return -ENXIO;
+#endif
+}
 
 static int memory_open(struct inode *inode, struct file *filp)
 {
@@ -813,7 +824,7 @@ static int memory_open(struct inode *inode, struct file *filp)
 
 	minor = iminor(inode);
 	if (minor >= ARRAY_SIZE(devlist))
-		return -ENXIO;
+		return memory_open_kmsg(inode, filp);
 
 	dev = &devlist[minor];
 	if (!dev->fops)
@@ -835,8 +846,20 @@ static const struct file_operations memory_fops = {
 
 static char *mem_devnode(struct device *dev, umode_t *mode)
 {
-	if (mode && devlist[MINOR(dev->devt)].mode)
-		*mode = devlist[MINOR(dev->devt)].mode;
+	int minor = MINOR(dev->devt);
+
+	if (!mode)
+		goto out;
+
+#ifdef CONFIG_PRINTK
+	if (minor >= ARRAY_SIZE(devlist)) {
+		kmsg_mode(minor, mode);
+		goto out;
+	}
+#endif
+	if (devlist[minor].mode)
+		*mode = devlist[minor].mode;
+out:
 	return NULL;
 }
 
@@ -867,6 +890,12 @@ static int __init chr_dev_init(void)
 		device_create(mem_class, NULL, MKDEV(MEM_MAJOR, minor),
 			      NULL, devlist[minor].name);
 	}
+
+#ifdef CONFIG_PRINTK
+	init_kmsg(KMSG_MINOR, 0644);
+	device_create(mem_class, NULL, MKDEV(MEM_MAJOR, KMSG_MINOR),
+		      NULL, "ksmg");
+#endif
 
 	return tty_init();
 }

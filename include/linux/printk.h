@@ -413,6 +413,9 @@ do {									\
 #endif
 
 extern const struct file_operations kmsg_fops;
+extern void init_kmsg(int minor, umode_t mode);
+
+extern int kmsg_mode(int minor, umode_t *mode);
 
 enum {
 	DUMP_PREFIX_NONE,

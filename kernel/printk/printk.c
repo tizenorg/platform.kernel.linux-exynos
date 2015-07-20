@@ -241,6 +241,7 @@ struct log_buffer {
 	u64 next_seq;
 #ifdef CONFIG_PRINTK
 	u32 next_idx;		/* index of the next record to store */
+	int mode;		/* mode of device */
 	int minor;		/* minor representing buffer device */
 #endif
 };
@@ -283,6 +284,7 @@ static struct log_buffer log_buf = {
 	.first_idx	= 0,
 	.next_seq	= 0,
 	.next_idx	= 0,
+	.mode		= 0,
 	.minor		= 0,
 };
 
@@ -1184,6 +1186,36 @@ const struct file_operations kmsg_fops = {
 	.poll = devkmsg_poll,
 	.release = devkmsg_release,
 };
+
+/* Should be used before device registration */
+void init_kmsg(int minor, umode_t mode)
+{
+	log_buf.minor = minor;
+	log_buf.mode = mode;
+}
+
+int kmsg_mode(int minor, umode_t *mode)
+{
+	int ret = -ENXIO;
+	struct log_buffer *log_b;
+
+	if (minor == log_buf.minor) {
+		*mode = log_buf.mode;
+		return 0;
+	}
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(log_b, &log_buf.list, list) {
+		if (log_b->minor == minor) {
+			*mode = log_b->mode;
+			ret = 0;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return ret;
+}
 
 #ifdef CONFIG_KEXEC
 /*
