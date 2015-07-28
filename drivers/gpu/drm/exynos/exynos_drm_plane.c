@@ -69,14 +69,14 @@ int exynos_check_plane(struct drm_plane *plane, struct drm_framebuffer *fb)
 
 	nr = exynos_drm_fb_get_buf_cnt(fb);
 	for (i = 0; i < nr; i++) {
-		struct exynos_drm_gem_buf *buffer = exynos_drm_fb_buffer(fb, i);
+		struct exynos_drm_gem_obj *obj = exynos_drm_fb_gem_obj(fb, i);
 
-		if (!buffer) {
-			DRM_DEBUG_KMS("buffer is null\n");
+		if (!obj) {
+			DRM_DEBUG_KMS("gem object is null\n");
 			return -EFAULT;
 		}
 
-		exynos_plane->dma_addr[i] = buffer->dma_addr + fb->offsets[i];
+		exynos_plane->dma_addr[i] = obj->dma_addr + fb->offsets[i];
 
 		DRM_DEBUG_KMS("buffer: %d, dma_addr = 0x%lx\n",
 				i, (unsigned long)exynos_plane->dma_addr[i]);
