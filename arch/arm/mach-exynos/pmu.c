@@ -875,9 +875,20 @@ static void exynos5420_pmu_init(void)
 	pr_info("EXYNOS5420 PMU initialized\n");
 }
 
+#define REBOOT_MODE_PREFIX	0x12345670
+#define REBOOT_MODE_NONE	0
+#define REBOOT_MODE_DOWNLOAD	1
+
 static int pmu_restart_notify(struct notifier_block *this,
 		unsigned long code, void *unused)
 {
+	char *cmd = unused;
+
+	if (cmd && !strcmp(cmd, "download"))
+		pmu_raw_writel(REBOOT_MODE_PREFIX | REBOOT_MODE_DOWNLOAD, S5P_INFORM5);
+	else
+		pmu_raw_writel(REBOOT_MODE_PREFIX | REBOOT_MODE_NONE, S5P_INFORM5);
+
 	pmu_raw_writel(0x1, EXYNOS_SWRESET);
 
 	return NOTIFY_DONE;
