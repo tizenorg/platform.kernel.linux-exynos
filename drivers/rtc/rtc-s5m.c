@@ -633,6 +633,18 @@ static int s5m8767_rtc_init_reg(struct s5m_rtc_info *info)
 	case S2MPS13X:
 		data[0] = (0 << BCD_EN_SHIFT) | (1 << MODEL24_SHIFT);
 		ret = regmap_write(info->regmap, info->regs->ctrl, data[0]);
+		if (ret < 0)
+			break;
+
+		ret = regmap_update_bits(info->regmap,
+				info->regs->rtc_udr_update,
+				info->regs->rtc_udr_mask,
+				info->regs->rtc_udr_mask);
+		if (ret < 0)
+			break;
+
+		ret = s5m8767_wait_for_udr_update(info);
+
 		break;
 
 	default:
