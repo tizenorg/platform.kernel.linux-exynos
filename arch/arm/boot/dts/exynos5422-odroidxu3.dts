@@ -582,7 +582,7 @@
 };
 
 &rtc {
-	status = "okay";
+	status = "disabled";
 	clocks = <&clock CLK_RTC>, <&s2mps11_osc S2MPS11_CLK_AP>;
 	clock-names = "rtc", "rtc_src";
 };
