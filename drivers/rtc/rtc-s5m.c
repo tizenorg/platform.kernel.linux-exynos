@@ -636,15 +636,7 @@ static int s5m8767_rtc_init_reg(struct s5m_rtc_info *info)
 		if (ret < 0)
 			break;
 
-		ret = regmap_update_bits(info->regmap,
-				info->regs->rtc_udr_update,
-				info->regs->rtc_udr_mask,
-				info->regs->rtc_udr_mask);
-		if (ret < 0)
-			break;
-
-		ret = s5m8767_wait_for_udr_update(info);
-
+		ret = s5m8767_rtc_set_alarm_reg(info);
 		break;
 
 	default:
