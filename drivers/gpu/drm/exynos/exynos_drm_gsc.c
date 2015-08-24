@@ -822,10 +822,7 @@ static int gsc_src_set_addr(struct device *dev,
 	DRM_DEBUG_KMS("prop_id[%d]buf_id[%d]buf_type[%d]\n",
 		property->prop_id, buf_id, buf_type);
 
-	if (buf_id > GSC_MAX_SRC) {
-		dev_info(ippdrv->dev, "inavlid buf_id %d.\n", buf_id);
-		return -EINVAL;
-	}
+	buf_id %= GSC_MAX_SRC;
 
 	/* address register set */
 	switch (buf_type) {
@@ -1287,10 +1284,7 @@ static int gsc_dst_set_addr(struct device *dev,
 	DRM_DEBUG_KMS("prop_id[%d]buf_id[%d]buf_type[%d]\n",
 		property->prop_id, buf_id, buf_type);
 
-	if (buf_id > GSC_MAX_DST) {
-		dev_info(ippdrv->dev, "inavlid buf_id %d.\n", buf_id);
-		return -EINVAL;
-	}
+	buf_id %= GSC_MAX_DST;
 
 	/* address register set */
 	switch (buf_type) {
@@ -1450,6 +1444,9 @@ static irqreturn_t gsc_irq_handler(int irq, void *dev_id)
 		buf_id[EXYNOS_DRM_OPS_DST] = gsc_get_dst_buf_index(ctx);
 		if (buf_id[EXYNOS_DRM_OPS_DST] < 0)
 			return IRQ_HANDLED;
+
+		buf_id[EXYNOS_DRM_OPS_SRC] = c_node->last_buf_id[EXYNOS_DRM_OPS_SRC];
+		buf_id[EXYNOS_DRM_OPS_DST] = c_node->last_buf_id[EXYNOS_DRM_OPS_DST];
 
 		DRM_DEBUG_KMS("buf_id_src[%d]buf_id_dst[%d]\n",
 			buf_id[EXYNOS_DRM_OPS_SRC], buf_id[EXYNOS_DRM_OPS_DST]);
