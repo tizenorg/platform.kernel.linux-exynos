@@ -1204,10 +1204,12 @@ static struct kdbus_reply *kdbus_conn_call(struct kdbus_conn *src,
 	if (ret < 0)
 		goto exit;
 
+	/*
 	if (!kdbus_conn_policy_talk(src, current_cred(), dst)) {
 		ret = -EPERM;
 		goto exit;
 	}
+	*/
 
 	wait = kdbus_reply_new(dst, src, &kmsg->msg, name, true);
 	if (IS_ERR(wait)) {
@@ -1282,9 +1284,11 @@ static int kdbus_conn_unicast(struct kdbus_conn *src, struct kdbus_kmsg *kmsg)
 		if (!kdbus_match_db_match_kmsg(dst->match_db, src, kmsg) ||
 		    !kdbus_conn_policy_talk(dst, NULL, src))
 			goto exit;
+	/*
 	} else if (!kdbus_conn_policy_talk(src, current_cred(), dst)) {
 		ret = -EPERM;
 		goto exit;
+	*/
 	} else if (kmsg->msg.flags & KDBUS_MSG_EXPECT_REPLY) {
 		wait = kdbus_reply_new(dst, src, &kmsg->msg, name, false);
 		if (IS_ERR(wait)) {
