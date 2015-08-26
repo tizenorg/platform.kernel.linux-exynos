@@ -78,6 +78,7 @@ struct drm_exynos_ipp_cmd_node {
 	struct drm_exynos_ipp_event_work *event_work;
 	enum drm_exynos_ipp_state	state;
 	struct drm_file	*filp;
+	unsigned int last_buf_id[EXYNOS_DRM_OPS_MAX];
 };
 
 /*
