@@ -1479,7 +1479,37 @@ static void hci_cc_get_raw_rssi(struct hci_dev *hdev,
 	mgmt_raw_rssi_response(hdev, rp, rp->status);
 }
 /* END TIZEN_Bluetooth :: Handle RSSI monitoring */
+
+/* BEGIN TIZEN_Bluetooth :: Handle Controller's Resolving List */
+static void hci_cc_le_read_res_list_size(struct hci_dev *hdev,
+					   struct sk_buff *skb)
+{
+	struct hci_rp_le_read_res_list_size *rp = (void *) skb->data;
+
+	BT_DBG("%s status 0x%2.2x size %u", hdev->name, rp->status, rp->size);
+
+	if (rp->status)
+		return;
+
+	/* this value would be check while updating Controller's Resolving list */
+	hdev->le_res_list_size = rp->size;
+}
+
+static void hci_cc_le_clear_res_list(struct hci_dev *hdev,
+				       struct sk_buff *skb)
+{
+	__u8 status = *((__u8 *) skb->data);
+
+	BT_DBG("%s status 0x%2.2x", hdev->name, status);
+
+	hci_dev_lock(hdev);
+
+	mgmt_load_dev_identity_complete(hdev, status);
+
+	hci_dev_unlock(hdev);
+}
 #endif
+
 static void hci_cc_read_rssi(struct hci_dev *hdev, struct sk_buff *skb)
 {
 	struct hci_rp_read_rssi *rp = (void *) skb->data;
@@ -3116,6 +3146,14 @@ static void hci_cmd_complete_evt(struct hci_dev *hdev, struct sk_buff *skb)
 
 	case HCI_OP_GET_RAW_RSSI:
 		hci_cc_get_raw_rssi(hdev, skb);
+		break;
+
+	case HCI_OP_LE_READ_RES_LIST_SIZE:
+		hci_cc_le_read_res_list_size(hdev, skb);
+		break;
+
+	case HCI_OP_LE_CLEAR_RES_LIST:
+		hci_cc_le_clear_res_list(hdev, skb);
 		break;
 #endif
 	default:

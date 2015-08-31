@@ -372,6 +372,9 @@ enum {
 #define HCI_LE_CONN_PARAM_REQ_PROC	0x02
 #define HCI_LE_PING			0x10
 #define HCI_LE_DATA_LEN_EXT		0x20
+#ifdef CONFIG_TIZEN_WIP
+#define HCI_LL_PRIVACY			0x40
+#endif
 #define HCI_LE_EXT_SCAN_POLICY		0x80
 
 /* Connection modes */
@@ -1477,6 +1480,14 @@ struct hci_cp_le_conn_param_req_neg_reply {
 } __packed;
 
 #ifdef CONFIG_TIZEN_WIP
+#define HCI_OP_LE_CLEAR_RES_LIST 0x0029
+
+#define HCI_OP_LE_READ_RES_LIST_SIZE 0x002A
+struct hci_rp_le_read_res_list_size {
+	__u8	status;
+	__u8	size;
+} __packed;
+
 /** Vendor Specific HCI Command
  * Vendor: Broadcom
  * Purpose: This HCI is used to enable RSSI monitoring and setting

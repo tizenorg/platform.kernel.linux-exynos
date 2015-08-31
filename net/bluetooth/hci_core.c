@@ -805,6 +805,13 @@ static void hci_init3_req(struct hci_request *req, unsigned long opt)
 			events[1] |= 0x04;	/* LE Direct Advertising
 						 * Report
 						 */
+#ifdef CONFIG_TIZEN_WIP
+		/* If the controller supports LE enhanced connection complete,
+		 * enable the corresponding event.
+		 */
+		if (hdev->le_features[0] & HCI_LL_PRIVACY)
+			events[1] |= 0x02;	/* LE Enhanced Conn Complete */
+#endif
 
 		/* If the controller supports the LE Read Local P-256
 		 * Public Key command, enable the corresponding event.

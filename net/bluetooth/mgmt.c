@@ -5854,6 +5854,9 @@ static int load_irks(struct sock *sk, struct hci_dev *hdev, void *cp_data,
 				   sizeof(struct mgmt_irk_info));
 	u16 irk_count, expected_len;
 	int i, err;
+#ifdef CONFIG_TIZEN_WIP
+	struct pending_cmd *cmd;
+#endif
 
 	BT_DBG("request for %s", hdev->name);
 
@@ -5906,8 +5909,41 @@ static int load_irks(struct sock *sk, struct hci_dev *hdev, void *cp_data,
 
 	set_bit(HCI_RPA_RESOLVING, &hdev->dev_flags);
 
-	err = cmd_complete(sk, hdev->id, MGMT_OP_LOAD_IRKS, 0, NULL, 0);
+/* Clear the controller's resolving list and load new devices identity list */
+#ifdef CONFIG_TIZEN_WIP
+	cmd = mgmt_pending_add(sk, MGMT_OP_LOAD_IRKS, hdev, cp_data,
+			       len);
+	if (!cmd) {
+		return -ENOMEM;
+		goto unlock;
+	}
 
+	cmd->cmd_complete = addr_cmd_complete;
+
+	/* Read Controller's Resolving List Size */
+	err = hci_send_cmd(hdev, HCI_OP_LE_READ_RES_LIST_SIZE, 0, NULL);
+	if (err < 0) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_LOAD_IRKS,
+				MGMT_STATUS_FAILED, NULL, 0);
+		mgmt_pending_remove(cmd);
+		goto unlock;
+	}
+
+	/* Clear Controller's Resolving List */
+	err = hci_send_cmd(hdev, HCI_OP_LE_CLEAR_RES_LIST, 0, NULL);
+	if (err < 0) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_LOAD_IRKS,
+				MGMT_STATUS_FAILED, NULL, 0);
+		mgmt_pending_remove(cmd);
+		goto unlock;
+	}
+
+	/* To Do : Add the device indentities to resolving list */
+#else
+	err = cmd_complete(sk, hdev->id, MGMT_OP_LOAD_IRKS, 0, NULL, 0);
+#endif
+
+unlock:
 	hci_dev_unlock(hdev);
 
 	return err;
@@ -6969,6 +7005,18 @@ void mgmt_multi_adv_state_change_evt(struct hci_dev *hdev, struct sk_buff *skb)
 
 	mgmt_event(MGMT_EV_MULTI_ADV_STATE_CHANGED, hdev, &mgmt_ev,
 			sizeof(struct mgmt_ev_vendor_specific_multi_adv_state_changed), NULL);
+}
+
+void mgmt_load_dev_identity_complete(struct hci_dev *hdev, u8 status)
+{
+	struct pending_cmd *cmd;
+
+	cmd = mgmt_pending_find(MGMT_OP_LOAD_IRKS, hdev);
+	if (!cmd)
+		return;
+
+	cmd->cmd_complete(cmd, mgmt_status(status));
+	mgmt_pending_remove(cmd);
 }
 /* END TIZEN_Bluetooth */
 #endif
