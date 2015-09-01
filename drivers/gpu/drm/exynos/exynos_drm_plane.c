@@ -67,7 +67,7 @@ int exynos_check_plane(struct drm_plane *plane, struct drm_framebuffer *fb)
 	int nr;
 	int i;
 
-	nr = exynos_drm_fb_get_buf_cnt(fb);
+	nr = drm_format_num_planes(fb->pixel_format);
 	for (i = 0; i < nr; i++) {
 		struct exynos_drm_gem_obj *obj = exynos_drm_fb_gem_obj(fb, i);
 
