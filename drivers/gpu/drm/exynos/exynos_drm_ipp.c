@@ -1529,7 +1529,7 @@ static int ipp_send_event(struct exynos_drm_ippdrv *ippdrv,
 	e = list_first_entry(&c_node->event_list,
 		struct drm_exynos_ipp_send_event, base.link);
 
-	do_gettimeofday(&now);
+	now = ktime_to_timeval(ktime_get());
 	DRM_DEBUG_KMS("tv_sec[%ld]tv_usec[%ld]\n", now.tv_sec, now.tv_usec);
 	e->event.tv_sec = now.tv_sec;
 	e->event.tv_usec = now.tv_usec;

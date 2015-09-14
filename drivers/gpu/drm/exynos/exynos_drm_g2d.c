@@ -898,7 +898,7 @@ static void g2d_finish_event(struct g2d_data *g2d, u32 cmdlist_no)
 	e = list_first_entry(&runqueue_node->event_list,
 			     struct drm_exynos_pending_g2d_event, base.link);
 
-	do_gettimeofday(&now);
+	now = ktime_to_timeval(ktime_get());
 	e->event.tv_sec = now.tv_sec;
 	e->event.tv_usec = now.tv_usec;
 	e->event.cmdlist_no = cmdlist_no;
