@@ -97,6 +97,12 @@ struct exynos_drm_plane {
 
 	bool enabled:1;
 	bool resume:1;
+
+	/* for fence */
+	struct exynos_drm_fence *cur_fence;
+	struct exynos_drm_fence *new_fence;
+	unsigned int fence_context;
+	unsigned int fence_seqno;
 };
 
 /*

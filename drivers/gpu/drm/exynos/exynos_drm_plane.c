@@ -13,11 +13,13 @@
 
 #include <drm/exynos_drm.h>
 #include <drm/drm_plane_helper.h>
+
 #include "exynos_drm_drv.h"
 #include "exynos_drm_crtc.h"
 #include "exynos_drm_fb.h"
 #include "exynos_drm_gem.h"
 #include "exynos_drm_plane.h"
+#include "exynos_drm_fence.h"
 
 static const uint32_t formats[] = {
 	DRM_FORMAT_XRGB8888,
@@ -66,6 +68,11 @@ int exynos_check_plane(struct drm_plane *plane, struct drm_framebuffer *fb)
 	struct exynos_drm_plane *exynos_plane = to_exynos_plane(plane);
 	int nr;
 	int i;
+
+	if (exynos_plane->new_fence) {
+		DRM_ERROR("Plane isn't prepared to fence\n");
+		return -EBUSY;
+	}
 
 	nr = drm_format_num_planes(fb->pixel_format);
 	for (i = 0; i < nr; i++) {
@@ -145,6 +152,83 @@ void exynos_plane_mode_set(struct drm_plane *plane, struct drm_crtc *crtc,
 	plane->crtc = crtc;
 }
 
+static int exynos_plane_fence(struct exynos_drm_plane *plane,
+			      struct list_head *resv_list)
+{
+	struct ww_acquire_ctx ww_ctx;
+	struct exynos_drm_resv_node *node;
+	struct exynos_drm_fence *exynos_fence;
+	int ret;
+
+	ret = exynos_fence_locks(resv_list, &ww_ctx);
+	if (ret < 0)
+		return ret;
+
+	list_for_each_entry(node, resv_list, head) {
+		ret = exynos_fence_wait(node->obj, false);
+		if (ret < 0) {
+			DRM_ERROR("Failed to wait exclusive fence: %d\n", ret);
+			goto out;
+		}
+
+		/*
+		 * No need any stuff to undo reservation_object_reserve_shared,
+		 * resources is released by reservation_object_fini().
+		 */
+		ret = reservation_object_reserve_shared(node->obj);
+		if (ret < 0)
+			goto out;
+	}
+
+	exynos_fence = exynos_fence_create(plane->fence_context,
+					   ++plane->fence_seqno);
+	if (IS_ERR(exynos_fence)) {
+		DRM_ERROR("Failed to create fence: %d\n", ret);
+		ret = PTR_ERR(exynos_fence);
+		goto out;
+	}
+
+	plane->new_fence = exynos_fence;
+
+	list_for_each_entry(node, resv_list, head)
+		reservation_object_add_shared_fence(node->obj,
+						    &exynos_fence->base);
+
+out:
+	exynos_fence_unlocks(resv_list, &ww_ctx);
+
+	return ret;
+}
+
+/* Will go to exynos_plane_prepare_fb() later */
+static int exynos_plane_prepare_fence(struct drm_plane *plane,
+				      struct drm_framebuffer *fb)
+{
+	struct exynos_drm_resv_node nodes[MAX_FB_BUFFER];
+	struct list_head resv_list;
+	int i;
+
+	INIT_LIST_HEAD(&resv_list);
+
+	for (i = 0; i < drm_format_num_planes(fb->pixel_format); i++) {
+		struct exynos_drm_gem *exynos_gem = exynos_drm_fb_gem(fb, i);
+
+		nodes[i].obj = exynos_gem->resv;
+		list_add_tail(&nodes[i].head, &resv_list);
+	}
+
+	return exynos_plane_fence(to_exynos_plane(plane), &resv_list);
+}
+
+/* Will go to exynos_plane_cleanup_fb() later */
+static void exynos_plane_cleanup_fence(struct drm_plane *plane,
+				       struct drm_framebuffer *fb)
+{
+	struct exynos_drm_plane *exynos_plane = to_exynos_plane(plane);
+
+	exynos_fence_signal(exynos_plane->new_fence);
+}
+
 int
 exynos_update_plane(struct drm_plane *plane, struct drm_crtc *crtc,
 		     struct drm_framebuffer *fb, int crtc_x, int crtc_y,
@@ -161,12 +245,27 @@ exynos_update_plane(struct drm_plane *plane, struct drm_crtc *crtc,
 	if (ret < 0)
 		return ret;
 
+	/* Will be called by .prepare_fb later */
+	ret = exynos_plane_prepare_fence(plane, fb);
+	if (ret < 0)
+		return ret;
+
 	exynos_plane_mode_set(plane, crtc, fb, crtc_x, crtc_y,
 			      crtc_w, crtc_h, src_x >> 16, src_y >> 16,
 			      src_w >> 16, src_h >> 16);
 
 	if (exynos_crtc->ops->win_commit)
 		exynos_crtc->ops->win_commit(exynos_crtc, exynos_plane->zpos);
+
+	/* Signal current fence and replace current fence with new fence */
+	if (exynos_plane->cur_fence)
+		exynos_fence_signal(exynos_plane->cur_fence);
+
+	exynos_plane->cur_fence = exynos_plane->new_fence;
+	exynos_plane->new_fence = NULL;
+
+	/* Will be called by .cleanup_fb later */
+	exynos_plane_cleanup_fence(plane, NULL);
 
 	return 0;
 }
@@ -179,6 +278,11 @@ static int exynos_disable_plane(struct drm_plane *plane)
 	if (exynos_crtc && exynos_crtc->ops->win_disable)
 		exynos_crtc->ops->win_disable(exynos_crtc,
 					      exynos_plane->zpos);
+
+	exynos_fence_signal(exynos_plane->cur_fence);
+
+	/* Will be called by .cleanup_fb later */
+	exynos_plane_cleanup_fence(plane, NULL);
 
 	return 0;
 }
@@ -228,6 +332,8 @@ int exynos_plane_init(struct drm_device *dev,
 
 	if (type == DRM_PLANE_TYPE_OVERLAY)
 		exynos_plane_attach_zpos_property(&exynos_plane->base, zpos);
+
+	exynos_plane->fence_context = fence_context_alloc(1);
 
 	return 0;
 }
