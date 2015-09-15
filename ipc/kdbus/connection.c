@@ -26,6 +26,7 @@
 #include <linux/path.h>
 #include <linux/poll.h>
 #include <linux/sched.h>
+#include <linux/security.h>
 #include <linux/shmem_fs.h>
 #include <linux/sizes.h>
 #include <linux/slab.h>
@@ -203,6 +204,13 @@ static struct kdbus_conn *kdbus_conn_new(struct kdbus_ep *ep, bool privileged,
 		if (ret < 0)
 			goto exit_unref;
 	}
+
+	ret = security_kdbus_conn_new(conn->cred, creds, pids, seclabel,
+				      privileged,
+				      is_activator, is_monitor,
+				      is_policy_holder);
+	if (ret < 0)
+		goto exit_unref;
 
 	/*
 	 * Account the connection against the current user (UID), or for
@@ -1467,12 +1475,12 @@ bool kdbus_conn_policy_own_name(struct kdbus_conn *conn,
 			return false;
 	}
 
-	if (conn->privileged)
-		return true;
-
 	res = kdbus_policy_query(&conn->ep->bus->policy_db, conn_creds,
 				 name, hash);
-	return res >= KDBUS_POLICY_OWN;
+	if (conn->privileged || res >= KDBUS_POLICY_OWN)
+		return security_kdbus_own_name(conn_creds, name) == 0;
+
+	return false;
 }
 
 /**
@@ -1497,14 +1505,13 @@ bool kdbus_conn_policy_talk(struct kdbus_conn *conn,
 					 to, KDBUS_POLICY_TALK))
 		return false;
 
-	if (conn->privileged)
-		return true;
-	if (uid_eq(conn_creds->euid, to->cred->uid))
-		return true;
+	if (conn->privileged || uid_eq(conn_creds->euid, to->cred->uid) ||
+	    kdbus_conn_policy_query_all(conn, conn_creds,
+					&conn->ep->bus->policy_db, to,
+					KDBUS_POLICY_TALK))
+		return security_kdbus_conn_talk(conn_creds, to->cred) == 0;
 
-	return kdbus_conn_policy_query_all(conn, conn_creds,
-					   &conn->ep->bus->policy_db, to,
-					   KDBUS_POLICY_TALK);
+	return false;
 }
 
 /**
@@ -1525,17 +1532,19 @@ bool kdbus_conn_policy_see_name_unlocked(struct kdbus_conn *conn,
 {
 	int res;
 
+	if (!conn_creds)
+		conn_creds = conn->cred;
+
 	/*
 	 * By default, all names are visible on a bus. SEE policies can only be
 	 * installed on custom endpoints, where by default no name is visible.
 	 */
-	if (!conn->ep->user)
-		return true;
-
-	res = kdbus_policy_query_unlocked(&conn->ep->policy_db,
-					  conn_creds ? : conn->cred,
+	res = kdbus_policy_query_unlocked(&conn->ep->policy_db, conn_creds,
 					  name, kdbus_strhash(name));
-	return res >= KDBUS_POLICY_SEE;
+	if (!conn->ep->user || res >= KDBUS_POLICY_SEE)
+		return security_kdbus_conn_see_name(conn_creds, name) == 0;
+
+	return false;
 }
 
 static bool kdbus_conn_policy_see_name(struct kdbus_conn *conn,
@@ -1555,6 +1564,9 @@ static bool kdbus_conn_policy_see(struct kdbus_conn *conn,
 				  const struct cred *conn_creds,
 				  struct kdbus_conn *whom)
 {
+	if (!conn_creds)
+		conn_creds = conn->cred;
+
 	/*
 	 * By default, all names are visible on a bus, so a connection can
 	 * always see other connections. SEE policies can only be installed on
@@ -1562,10 +1574,13 @@ static bool kdbus_conn_policy_see(struct kdbus_conn *conn,
 	 * peers from each other, unless you see at least _one_ name of the
 	 * peer.
 	 */
-	return !conn->ep->user ||
-	       kdbus_conn_policy_query_all(conn, conn_creds,
-					   &conn->ep->policy_db, whom,
-					   KDBUS_POLICY_SEE);
+	if (!conn->ep->user ||
+	    kdbus_conn_policy_query_all(conn, conn_creds,
+					&conn->ep->policy_db, whom,
+					KDBUS_POLICY_SEE))
+		return security_kdbus_conn_see(conn_creds, whom->cred) == 0;
+
+	return false;
 }
 
 /**
@@ -1586,6 +1601,9 @@ bool kdbus_conn_policy_see_notification(struct kdbus_conn *conn,
 	if (WARN_ON(kmsg->msg.src_id != KDBUS_SRC_ID_KERNEL))
 		return false;
 
+	if (!conn_creds)
+		conn_creds = conn->cred;
+
 	/*
 	 * Depending on the notification type, broadcasted kernel notifications
 	 * have to be filtered:
@@ -1604,18 +1622,27 @@ bool kdbus_conn_policy_see_notification(struct kdbus_conn *conn,
 	case KDBUS_ITEM_NAME_ADD:
 	case KDBUS_ITEM_NAME_REMOVE:
 	case KDBUS_ITEM_NAME_CHANGE:
-		return kdbus_conn_policy_see_name(conn, conn_creds,
-						  kmsg->notify_name);
+		if (!kdbus_conn_policy_see_name(conn, conn_creds,
+						kmsg->notify_name))
+			return false;
+		break;
 
 	case KDBUS_ITEM_ID_ADD:
 	case KDBUS_ITEM_ID_REMOVE:
-		return !conn->ep->user;
+		if (conn->ep->user)
+			return false;
+		break;
 
 	default:
 		WARN(1, "Invalid type for notification broadcast: %llu\n",
 		     (unsigned long long)kmsg->notify_type);
 		return false;
 	}
+
+	if (security_kdbus_conn_see_notification(conn_creds) < 0)
+		return false;
+
+	return true;
 }
 
 /**

@@ -53,6 +53,9 @@ struct msg_queue;
 struct xattr;
 struct xfrm_sec_ctx;
 struct mm_struct;
+struct pid;
+struct kdbus_creds;
+struct kdbus_pids;
 
 /* Maximum number of letters for an LSM name string */
 #define SECURITY_NAME_MAX	10
@@ -1300,6 +1303,40 @@ static inline void security_free_mnt_opts(struct security_mnt_opts *opts)
  *	@file contains the struct file being transferred.
  *	@to contains the task_struct for the receiving task.
  *
+ * @kdbus_conn_new
+ *	Check if the current task is allowed to create a new kdbus connection.
+ *	@creds credentials for the new connection
+ *	@fake_creds kdbus faked credentials
+ *	@fake_pids kdbus faked pids
+ *	@fake_seclabel kdbus faked security label
+ *	@privileged kdbus privileged
+ *	@is_activator kdbus activator boolean
+ *	@is_monitor kdbus monitor boolean
+ *	@is_policy_holder kdbus policy holder boolean
+ * @kdbus_own_name
+ *	Check if a connection is allowed to own a kdbus service name.
+ *	@creds requestor's credentials
+ *	@name service name
+ * @kdbus_conn_talk
+ *	Check if a connection is allowed to talk to a kdbus peer.
+ *	@creds requestor's credentials
+ *	@creds_peer peer credentials
+ * @kdbus_conn_see
+ *	Check if a connection can see a kdbus peer.
+ *	@creds requestor's credentials
+ *	@creds_peer peer credentials
+ * @kdbus_conn_see_name
+ *	Check if a connection can see a kdbus service name.
+ *	@creds requestor's credentials
+ *	@name service name
+ * @kdbus_conn_see_notification
+ *	Check if a connection can receive notifications.
+ *	@creds requestor's credentials
+ * @kdbus_proc_permission
+ *	Check if a connection can access another task's pid namespace info.
+ *	@cred requestor's credentials
+ *	@pid target task's pid struct
+ *
  * @ptrace_access_check:
  *	Check permission before allowing the current process to trace the
  *	@child process.
@@ -1467,6 +1504,23 @@ struct security_operations {
 				       struct task_struct *to);
 	int (*binder_transfer_file) (struct task_struct *from,
 				     struct task_struct *to, struct file *file);
+
+#ifdef CONFIG_KDBUS
+	int (*kdbus_conn_new)(const struct cred *creds,
+			      const struct kdbus_creds *fake_creds,
+			      const struct kdbus_pids *fake_pids,
+			      const char *fake_seclabel,
+			      bool privileged, bool is_activator,
+			      bool is_monitor, bool is_policy_holder);
+	int (*kdbus_own_name)(const struct cred *creds, const char *name);
+	int (*kdbus_conn_talk)(const struct cred *creds,
+			       const struct cred *creds_peer);
+	int (*kdbus_conn_see)(const struct cred *creds,
+			      const struct cred *creds_peer);
+	int (*kdbus_conn_see_name)(const struct cred *creds, const char *name);
+	int (*kdbus_conn_see_notification)(const struct cred *creds);
+	int (*kdbus_proc_permission)(const struct cred *creds, struct pid *pid);
+#endif /* CONFIG_KDBUS */
 
 	int (*ptrace_access_check) (struct task_struct *child, unsigned int mode);
 	int (*ptrace_traceme) (struct task_struct *parent);
@@ -1773,6 +1827,72 @@ int security_binder_transfer_binder(struct task_struct *from,
 				    struct task_struct *to);
 int security_binder_transfer_file(struct task_struct *from,
 				  struct task_struct *to, struct file *file);
+
+#ifdef CONFIG_KDBUS
+#ifdef CONFIG_SECURITY
+
+int security_kdbus_conn_new(const struct cred *creds,
+			    const struct kdbus_creds *fake_creds,
+			    const struct kdbus_pids *fake_pids,
+			    const char *fake_seclabel,
+			    bool privileged, bool is_activator,
+			    bool is_monitor, bool is_policy_holder);
+int security_kdbus_own_name(const struct cred *creds, const char *name);
+int security_kdbus_conn_talk(const struct cred *creds,
+			     const struct cred *creds_peer);
+int security_kdbus_conn_see(const struct cred *creds,
+			    const struct cred *creds_peer);
+int security_kdbus_conn_see_name(const struct cred *creds, const char *name);
+int security_kdbus_conn_see_notification(const struct cred *creds);
+int security_kdbus_proc_permission(const struct cred *creds, struct pid *pid);
+
+#else /* CONFIG_SECURITY */
+
+static inline int security_kdbus_conn_new(const struct cred *creds,
+			    const struct kdbus_creds *fake_creds,
+			    const struct kdbus_pids *fake_pids,
+			    const char *fake_seclabel,
+			    bool privileged, bool is_activator,
+			    bool is_monitor, bool is_policy_holder)
+{
+	return 0;
+}
+
+static inline int security_kdbus_own_name(const struct cred *creds, const char *name)
+{
+	return 0;
+}
+
+static inline int security_kdbus_conn_talk(const struct cred *creds,
+			     const struct cred *creds_peer)
+{
+	return 0;
+}
+
+static inline int security_kdbus_conn_see(const struct cred *creds,
+			    const struct cred *creds_peer)
+{
+	return 0;
+}
+
+static inline int security_kdbus_conn_see_name(const struct cred *creds, const char *name)
+{
+	return 0;
+}
+
+static inline int security_kdbus_conn_see_notification(const struct cred *creds)
+{
+	return 0;
+}
+
+static inline int security_kdbus_proc_permission(const struct cred *creds, struct pid *pid)
+{
+	return 0;
+}
+
+#endif /* CONFIG_SECURITY */
+#endif /* CONFIG_KDBUS */
+
 int security_ptrace_access_check(struct task_struct *child, unsigned int mode);
 int security_ptrace_traceme(struct task_struct *parent);
 int security_capget(struct task_struct *target,

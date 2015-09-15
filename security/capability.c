@@ -595,6 +595,52 @@ static int cap_sem_semop(struct sem_array *sma, struct sembuf *sops,
 	return 0;
 }
 
+#ifdef CONFIG_KDBUS
+
+int cap_kdbus_conn_new(const struct cred *creds,
+			const struct kdbus_creds *fake_creds,
+			const struct kdbus_pids *fake_pids,
+			const char *fake_seclabel,
+			bool privileged, bool is_activator,
+			bool is_monitor, bool is_policy_holder)
+{
+	return 0;
+}
+
+int cap_kdbus_own_name(const struct cred *creds, const char *name)
+{
+	return 0;
+}
+
+int cap_kdbus_conn_talk(const struct cred *creds,
+			 const struct cred *creds_peer)
+{
+	return 0;
+}
+
+int cap_kdbus_conn_see(const struct cred *creds,
+			const struct cred *creds_peer)
+{
+	return 0;
+}
+
+int cap_kdbus_conn_see_name(const struct cred *creds, const char *name)
+{
+	return 0;
+}
+
+int cap_kdbus_conn_see_notification(const struct cred *creds)
+{
+	return 0;
+}
+
+int cap_kdbus_proc_permission(const struct cred *creds, struct pid *pid)
+{
+	return 0;
+}
+
+#endif /* CONFIG_KDBUS */
+
 #ifdef CONFIG_SECURITY_NETWORK
 static int cap_unix_stream_connect(struct sock *sock, struct sock *other,
 				   struct sock *newsk)
@@ -1097,6 +1143,15 @@ void __init security_fixup_ops(struct security_operations *ops)
 	set_to_cap_if_null(ops, inode_notifysecctx);
 	set_to_cap_if_null(ops, inode_setsecctx);
 	set_to_cap_if_null(ops, inode_getsecctx);
+#ifdef CONFIG_KDBUS
+	set_to_cap_if_null(ops, kdbus_conn_new);
+	set_to_cap_if_null(ops, kdbus_own_name);
+	set_to_cap_if_null(ops, kdbus_conn_talk);
+	set_to_cap_if_null(ops, kdbus_conn_see);
+	set_to_cap_if_null(ops, kdbus_conn_see_name);
+	set_to_cap_if_null(ops, kdbus_conn_see_notification);
+	set_to_cap_if_null(ops, kdbus_proc_permission);
+#endif /* CONFIG_KDBUS */
 #ifdef CONFIG_SECURITY_NETWORK
 	set_to_cap_if_null(ops, unix_stream_connect);
 	set_to_cap_if_null(ops, unix_may_send);

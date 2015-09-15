@@ -158,6 +158,51 @@ int security_binder_transfer_file(struct task_struct *from,
 	return security_ops->binder_transfer_file(from, to, file);
 }
 
+int security_kdbus_conn_new(const struct cred *creds,
+			    const struct kdbus_creds *fake_creds,
+			    const struct kdbus_pids *fake_pids,
+			    const char *fake_seclabel,
+			    bool privileged, bool is_activator,
+			    bool is_monitor, bool is_policy_holder)
+{
+	return security_ops->kdbus_conn_new(creds, fake_creds, fake_pids,
+					    fake_seclabel, privileged,
+					    is_activator, is_monitor,
+					    is_policy_holder);
+}
+
+int security_kdbus_own_name(const struct cred *creds, const char *name)
+{
+	return security_ops->kdbus_own_name(creds, name);
+}
+
+int security_kdbus_conn_talk(const struct cred *creds,
+			     const struct cred *creds_peer)
+{
+	return security_ops->kdbus_conn_talk(creds, creds_peer);
+}
+
+int security_kdbus_conn_see(const struct cred *creds,
+			    const struct cred *creds_peer)
+{
+	return security_ops->kdbus_conn_see(creds, creds_peer);
+}
+
+int security_kdbus_conn_see_name(const struct cred *creds, const char *name)
+{
+	return security_ops->kdbus_conn_see_name(creds, name);
+}
+
+int security_kdbus_conn_see_notification(const struct cred *creds)
+{
+	return security_ops->kdbus_conn_see_notification(creds);
+}
+
+int security_kdbus_proc_permission(const struct cred *creds, struct pid *pid)
+{
+	return security_ops->kdbus_proc_permission(creds, pid);
+}
+
 int security_ptrace_access_check(struct task_struct *child, unsigned int mode)
 {
 #ifdef CONFIG_SECURITY_YAMA_STACKED
