@@ -204,6 +204,9 @@ void exynos_drm_gem_destroy(struct exynos_drm_gem *exynos_gem)
 
 	DRM_DEBUG_KMS("handle count = %d\n", obj->handle_count);
 
+	if (exynos_gem->resv == &exynos_gem->inner_resv)
+		reservation_object_fini(&exynos_gem->inner_resv);
+
 	/*
 	 * do not release memory region from exporter.
 	 *
@@ -241,8 +244,9 @@ unsigned long exynos_drm_gem_get_size(struct drm_device *dev,
 	return exynos_gem->size;
 }
 
-static struct exynos_drm_gem *exynos_drm_gem_init(struct drm_device *dev,
-						  unsigned long size)
+static struct exynos_drm_gem *
+exynos_drm_gem_init(struct drm_device *dev, struct reservation_object *resv,
+		    unsigned long size)
 {
 	struct exynos_drm_gem *exynos_gem;
 	struct drm_gem_object *obj;
@@ -251,6 +255,13 @@ static struct exynos_drm_gem *exynos_drm_gem_init(struct drm_device *dev,
 	exynos_gem = kzalloc(sizeof(*exynos_gem), GFP_KERNEL);
 	if (!exynos_gem)
 		return ERR_PTR(-ENOMEM);
+
+	if (!resv) {
+		exynos_gem->resv = &exynos_gem->inner_resv;
+		reservation_object_init(&exynos_gem->inner_resv);
+	} else {
+		exynos_gem->resv = resv;
+	}
 
 	exynos_gem->size = size;
 	obj = &exynos_gem->base;
@@ -295,7 +306,7 @@ struct exynos_drm_gem *exynos_drm_gem_create(struct drm_device *dev,
 
 	size = roundup(size, PAGE_SIZE);
 
-	exynos_gem = exynos_drm_gem_init(dev, size);
+	exynos_gem = exynos_drm_gem_init(dev, NULL, size);
 	if (IS_ERR(exynos_gem))
 		return exynos_gem;
 
@@ -641,6 +652,13 @@ int exynos_drm_gem_mmap(struct file *filp, struct vm_area_struct *vma)
 }
 
 /* low-level interface prime helpers */
+struct reservation_object *exynos_gem_prime_res_obj(struct drm_gem_object *obj)
+{
+	struct exynos_drm_gem *exynos_gem = to_exynos_gem(obj);
+
+	return exynos_gem->resv;
+}
+
 struct sg_table *exynos_drm_gem_prime_get_sg_table(struct drm_gem_object *obj)
 {
 	struct exynos_drm_gem *exynos_gem = to_exynos_gem(obj);
@@ -657,10 +675,11 @@ exynos_drm_gem_prime_import_sg_table(struct drm_device *dev,
 				     struct sg_table *sgt)
 {
 	struct exynos_drm_gem *exynos_gem;
+	struct reservation_object *resv = attach->dmabuf->resv;
 	int npages;
 	int ret;
 
-	exynos_gem = exynos_drm_gem_init(dev, attach->dmabuf->size);
+	exynos_gem = exynos_drm_gem_init(dev, resv, attach->dmabuf->size);
 	if (IS_ERR(exynos_gem)) {
 		ret = PTR_ERR(exynos_gem);
 		return ERR_PTR(ret);

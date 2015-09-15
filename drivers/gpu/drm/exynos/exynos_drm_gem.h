@@ -13,6 +13,7 @@
 #define _EXYNOS_DRM_GEM_H_
 
 #include <drm/drm_gem.h>
+#include <linux/reservation.h>
 
 #define to_exynos_gem(x)	container_of(x, struct exynos_drm_gem, base)
 
@@ -37,6 +38,8 @@
  *	device address with IOMMU.
  * @pages: Array of backing pages.
  * @sgt: Converted sg_table of pages or imported sg_table.
+ * @inner_resv: inner reservation object.
+ * @resv: pointer of reservation object(inner or outer).
  *
  * P.S. this object would be transferred to user as kms_bo.handle so
  *	user can access the buffer through kms_bo.handle.
@@ -51,6 +54,8 @@ struct exynos_drm_gem {
 	struct dma_attrs	dma_attrs;
 	struct page		**pages;
 	struct sg_table		*sgt;
+	struct reservation_object	inner_resv;
+	struct reservation_object	*resv;
 };
 
 /* destroy a buffer with gem object */
@@ -134,6 +139,7 @@ int exynos_drm_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
 int exynos_drm_gem_mmap(struct file *filp, struct vm_area_struct *vma);
 
 /* low-level interface prime helpers */
+struct reservation_object *exynos_gem_prime_res_obj(struct drm_gem_object *obj);
 struct sg_table *exynos_drm_gem_prime_get_sg_table(struct drm_gem_object *obj);
 struct drm_gem_object *
 exynos_drm_gem_prime_import_sg_table(struct drm_device *dev,
