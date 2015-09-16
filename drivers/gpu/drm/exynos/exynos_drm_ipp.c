@@ -1426,7 +1426,6 @@ static int ipp_send_event(struct exynos_drm_ippdrv *ippdrv,
 	struct drm_exynos_ipp_send_event *e;
 	struct list_head *head;
 	struct timeval now;
-	ktime_t now_ktime;
 	unsigned long flags;
 	u32 tbuf_id[EXYNOS_DRM_OPS_MAX] = {0, };
 	int ret, i;
@@ -1530,8 +1529,7 @@ static int ipp_send_event(struct exynos_drm_ippdrv *ippdrv,
 	e = list_first_entry(&c_node->event_list,
 		struct drm_exynos_ipp_send_event, base.link);
 
-	now_ktime = drm_timestamp_monotonic ? ktime_get() : ktime_get_real();
-	now = ktime_to_timeval(now_ktime);
+	do_gettimeofday(&now);
 	DRM_DEBUG_KMS("tv_sec[%ld]tv_usec[%ld]\n", now.tv_sec, now.tv_usec);
 	e->event.tv_sec = now.tv_sec;
 	e->event.tv_usec = now.tv_usec;

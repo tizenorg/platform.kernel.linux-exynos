@@ -890,7 +890,6 @@ static void g2d_finish_event(struct g2d_data *g2d, u32 cmdlist_no)
 	struct g2d_runqueue_node *runqueue_node = g2d->runqueue_node;
 	struct drm_exynos_pending_g2d_event *e;
 	struct timeval now;
-	ktime_t now_ktime;
 	unsigned long flags;
 
 	if (list_empty(&runqueue_node->event_list))
@@ -899,8 +898,7 @@ static void g2d_finish_event(struct g2d_data *g2d, u32 cmdlist_no)
 	e = list_first_entry(&runqueue_node->event_list,
 			     struct drm_exynos_pending_g2d_event, base.link);
 
-	now_ktime = drm_timestamp_monotonic ? ktime_get() : ktime_get_real();
-	now = ktime_to_timeval(now_ktime);
+	do_gettimeofday(&now);
 	e->event.tv_sec = now.tv_sec;
 	e->event.tv_usec = now.tv_usec;
 	e->event.cmdlist_no = cmdlist_no;
