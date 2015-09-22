@@ -43,15 +43,10 @@ static int exynos_drm_alloc_buf(struct exynos_drm_gem *exynos_gem)
 	if (!(exynos_gem->flags & EXYNOS_BO_NONCONTIG))
 		dma_set_attr(DMA_ATTR_FORCE_CONTIGUOUS, &exynos_gem->dma_attrs);
 
-	/*
-	 * if EXYNOS_BO_WC or EXYNOS_BO_NONCACHABLE, writecombine mapping
-	 * else cachable mapping.
-	 */
+	/* if EXYNOS_BO_WC or EXYNOS_BO_NONCACHABLE, writecombine mapping */
 	if (exynos_gem->flags & EXYNOS_BO_WC ||
 			!(exynos_gem->flags & EXYNOS_BO_CACHABLE))
 		attr = DMA_ATTR_WRITE_COMBINE;
-	else
-		attr = DMA_ATTR_NON_CONSISTENT;
 
 	dma_set_attr(attr, &exynos_gem->dma_attrs);
 	dma_set_attr(DMA_ATTR_NO_KERNEL_MAPPING, &exynos_gem->dma_attrs);
