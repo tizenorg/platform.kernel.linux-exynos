@@ -38,7 +38,7 @@
  *	- this address could be physical address without IOMMU and
  *	device address with IOMMU.
  * @pages: Array of backing pages.
- * @sgt: Imported sg_table.
+ * @sgt: Converted sg_table of pages or imported sg_table.
  *
  * P.S. this object would be transferred to user as kms_bo.handle so
  *	user can access the buffer through kms_bo.handle.
