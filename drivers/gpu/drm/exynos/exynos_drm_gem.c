@@ -44,7 +44,9 @@ static int exynos_drm_get_pages(struct exynos_drm_gem *exynos_gem)
 		goto err;
 	}
 
-	exynos_gem->dma_addr = sg_dma_address(sgt->sgl);
+	if (is_drm_iommu_supported(dev))
+		exynos_gem->dma_addr = sg_dma_address(sgt->sgl);
+
 	exynos_gem->sgt = sgt;
 	exynos_gem->pages = pages;
 
@@ -148,11 +150,6 @@ static int exynos_drm_alloc_buf(struct exynos_drm_gem *exynos_gem)
 	struct drm_device *dev = exynos_gem->base.dev;
 	int ret;
 
-	if (exynos_gem->dma_addr) {
-		DRM_DEBUG_KMS("already allocated.\n");
-		return 0;
-	}
-
 	if (!is_drm_iommu_supported(dev)) {
 		if (!(exynos_gem->flags & EXYNOS_BO_NONCONTIG))
 			return exynos_drm_alloc_dma(exynos_gem);
@@ -170,11 +167,6 @@ static int exynos_drm_alloc_buf(struct exynos_drm_gem *exynos_gem)
 static void exynos_drm_free_buf(struct exynos_drm_gem *exynos_gem)
 {
 	struct drm_device *dev = exynos_gem->base.dev;
-
-	if (!exynos_gem->dma_addr) {
-		DRM_DEBUG_KMS("dma_addr is invalid.\n");
-		return;
-	}
 
 	if (!is_drm_iommu_supported(dev)) {
 		if (!(exynos_gem->flags & EXYNOS_BO_NONCONTIG))
@@ -276,6 +268,8 @@ static struct exynos_drm_gem *exynos_drm_gem_init(struct drm_device *dev,
 		kfree(exynos_gem);
 		return ERR_PTR(ret);
 	}
+
+	exynos_gem->dma_addr = DMA_ERROR_CODE;
 
 	DRM_DEBUG_KMS("created file object = 0x%x\n", (unsigned int)obj->filp);
 
@@ -614,18 +608,18 @@ exynos_drm_gem_prime_import_sg_table(struct drm_device *dev,
 		return ERR_PTR(ret);
 	}
 
-	exynos_gem->dma_addr = sg_dma_address(sgt->sgl);
-
 	/*
 	 * Always physically continuous memory if sgt->nents is 1. It
 	 * doesn't care if IOMMU is supported but EXYNOS_BO_NONCONTIG
 	 * flag will be cleared. It will mean the memory is continuous
 	 * for device. EXYNOS_BO_NONCONTIG flag will be set if not both.
 	 */
-	if (sgt->nents == 1 || is_drm_iommu_supported(dev))
+	if (sgt->nents == 1 || is_drm_iommu_supported(dev)) {
 		exynos_gem->flags &= ~EXYNOS_BO_NONCONTIG;
-	else
+		exynos_gem->dma_addr = sg_dma_address(sgt->sgl);
+	} else {
 		exynos_gem->flags |= EXYNOS_BO_NONCONTIG;
+	}
 
 	npages = exynos_gem->size >> PAGE_SHIFT;
 	exynos_gem->pages = drm_malloc_ab(npages, sizeof(struct page *));
