@@ -32,6 +32,8 @@ struct drm_exynos_gem_create {
 	unsigned int handle;
 };
 
+#define EXYNOS_GEM_CPU_PREP_WRITE	(1 << 0)
+
 /**
  * A structure for getting a fake-offset that can be used with mmap.
  *
@@ -49,10 +51,11 @@ struct drm_exynos_gem_map {
  * A structure for cpu access of gem object from user.
  *
  * @handle: handle of gem object.
+ * @flags: cpu access type e.g. read or write
  */
 struct drm_exynos_gem_cpu_access {
 	__u32 handle;
-	__u32 reserved;
+	__u32 flags;
 };
 
 /**

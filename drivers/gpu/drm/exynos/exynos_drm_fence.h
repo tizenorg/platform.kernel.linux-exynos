@@ -18,6 +18,12 @@ struct exynos_drm_fence {
 	spinlock_t lock;
 };
 
+struct exynos_drm_fence_node {
+	struct list_head head;
+	struct exynos_drm_fence *exynos_fence;
+	struct exynos_drm_gem *exynos_gem;
+};
+
 struct exynos_drm_resv_node {
 	struct list_head head;
 	struct reservation_object *obj;

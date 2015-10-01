@@ -31,6 +31,7 @@
 #include "exynos_drm_ipp.h"
 #include "exynos_drm_iommu.h"
 #include "exynos_drm_debugfs.h"
+#include "exynos_drm_fence.h"
 
 #define DRIVER_NAME	"exynos"
 #define DRIVER_DESC	"Samsung SoC DRM"
@@ -187,6 +188,9 @@ static int exynos_drm_open(struct drm_device *dev, struct drm_file *file)
 	if (!file_priv)
 		return -ENOMEM;
 
+	file_priv->fence_context = fence_context_alloc(1);
+	INIT_LIST_HEAD(&file_priv->fence_list);
+
 #if defined(CONFIG_DEBUG_FS)
 	file_priv->tgid = task_tgid_nr(current);
 #endif
@@ -208,7 +212,22 @@ err_file_priv_free:
 static void exynos_drm_preclose(struct drm_device *dev,
 					struct drm_file *file)
 {
+	struct drm_exynos_file_private *file_priv = file->driver_priv;
+	struct exynos_drm_fence_node *node, *t;
+
 	exynos_drm_subdrv_close(dev, file);
+
+	if (!file_priv)
+		return;
+
+	mutex_lock(&dev->struct_mutex);
+	list_for_each_entry_safe(node, t, &file_priv->fence_list, head) {
+		exynos_fence_signal(node->exynos_fence);
+		drm_gem_object_unreference(&node->exynos_gem->base);
+		list_del(&node->head);
+		kfree(node);
+	}
+	mutex_unlock(&dev->struct_mutex);
 }
 
 static void exynos_drm_postclose(struct drm_device *dev, struct drm_file *file)

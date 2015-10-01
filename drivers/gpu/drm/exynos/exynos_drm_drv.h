@@ -226,6 +226,12 @@ struct exynos_drm_g2d_private {
 struct drm_exynos_file_private {
 	struct exynos_drm_g2d_private	*g2d_priv;
 	struct device			*ipp_dev;
+
+	/* for fence */
+	unsigned int fence_context;
+	unsigned int fence_seqno;
+	struct list_head fence_list;
+
 #if defined(CONFIG_DEBUG_FS)
 	pid_t				tgid;
 #endif

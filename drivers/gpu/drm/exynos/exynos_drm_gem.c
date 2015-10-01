@@ -19,6 +19,7 @@
 #include "exynos_drm_drv.h"
 #include "exynos_drm_gem.h"
 #include "exynos_drm_iommu.h"
+#include "exynos_drm_fence.h"
 
 static int exynos_drm_get_pages(struct exynos_drm_gem *exynos_gem)
 {
@@ -353,12 +354,34 @@ int exynos_drm_gem_map_ioctl(struct drm_device *dev, void *data,
 					      &args->offset);
 }
 
+static struct exynos_drm_fence_node *
+find_fence_node(struct drm_device *dev, struct list_head *fence_list,
+		struct exynos_drm_gem *exynos_gem)
+{
+	struct exynos_drm_fence_node *node;
+
+	mutex_lock(&dev->struct_mutex);
+	list_for_each_entry(node, fence_list, head) {
+		if (node->exynos_gem == exynos_gem) {
+			mutex_unlock(&dev->struct_mutex);
+			return node;
+		}
+	}
+	mutex_unlock(&dev->struct_mutex);
+	return NULL;
+}
+
 int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
 				  struct drm_file *file)
 {
+	struct drm_exynos_file_private *file_priv = file->driver_priv;
 	struct drm_exynos_gem_cpu_access *args = data;
 	struct drm_gem_object *obj;
 	struct exynos_drm_gem *exynos_gem;
+	struct exynos_drm_fence *exynos_fence;
+	struct exynos_drm_fence_node *node;
+	bool exclusive = args->flags & EXYNOS_GEM_CPU_PREP_WRITE;
+	int ret;
 
 	obj = drm_gem_object_lookup(dev, file, args->handle);
 	if (!obj) {
@@ -367,22 +390,79 @@ int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
 	}
 
 	exynos_gem = to_exynos_gem(obj);
+
+	node = find_fence_node(dev, &file_priv->fence_list, exynos_gem);
+	if (node) {
+		ret = -EEXIST;
+		goto err;
+	}
+
+	node = kmalloc(sizeof(*node), GFP_KERNEL);
+	if (!node) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	ww_mutex_lock(&exynos_gem->resv->lock, NULL);
+
+	ret = exynos_fence_wait(exynos_gem->resv, exclusive);
+	if (ret < 0)
+		goto err_unlock;
+
+	if (!exclusive) {
+		ret = reservation_object_reserve_shared(exynos_gem->resv);
+		if (ret < 0)
+			goto err_unlock;
+	}
+
+	exynos_fence = exynos_fence_create(file_priv->fence_context,
+					   ++file_priv->fence_seqno);
+	if (IS_ERR(exynos_fence)) {
+		DRM_ERROR("Failed to create fence\n");
+		ret = PTR_ERR(exynos_fence);
+		goto err_unlock;
+	}
+
+	if (exclusive)
+		reservation_object_add_excl_fence(exynos_gem->resv,
+						  &exynos_fence->base);
+	else
+		reservation_object_add_shared_fence(exynos_gem->resv,
+						    &exynos_fence->base);
+
+	ww_mutex_unlock(&exynos_gem->resv->lock);
+
+	node->exynos_fence = exynos_fence;
+	node->exynos_gem = exynos_gem;
+
+	mutex_lock(&dev->struct_mutex);
+	list_add(&node->head, &file_priv->fence_list);
+	mutex_unlock(&dev->struct_mutex);
 
 	if (exynos_gem->flags & EXYNOS_BO_CACHABLE)
 		dma_sync_sg_for_cpu(dev->dev, exynos_gem->sgt->sgl,
 				    exynos_gem->sgt->nents, DMA_FROM_DEVICE);
 
+	/* keep held reference of drm_gem_object */
+	return 0;
+
+err_unlock:
+	ww_mutex_unlock(&exynos_gem->resv->lock);
+	kfree(node);
+err:
 	drm_gem_object_unreference_unlocked(obj);
 
-	return 0;
+	return ret;
 }
 
 int exynos_drm_gem_cpu_fini_ioctl(struct drm_device *dev, void *data,
 				  struct drm_file *file)
 {
+	struct drm_exynos_file_private *file_priv = file->driver_priv;
 	struct drm_exynos_gem_cpu_access *args = data;
 	struct drm_gem_object *obj;
 	struct exynos_drm_gem *exynos_gem;
+	struct exynos_drm_fence_node *node;
 
 	obj = drm_gem_object_lookup(dev, file, args->handle);
 	if (!obj) {
@@ -392,10 +472,27 @@ int exynos_drm_gem_cpu_fini_ioctl(struct drm_device *dev, void *data,
 
 	exynos_gem = to_exynos_gem(obj);
 
+	node = find_fence_node(dev, &file_priv->fence_list, exynos_gem);
+	if (!node) {
+		drm_gem_object_unreference_unlocked(obj);
+		return -EINVAL;
+	}
+
 	if (exynos_gem->flags & EXYNOS_BO_CACHABLE)
 		dma_sync_sg_for_device(dev->dev, exynos_gem->sgt->sgl,
 				       exynos_gem->sgt->nents, DMA_TO_DEVICE);
 
+	exynos_fence_signal(node->exynos_fence);
+
+	mutex_lock(&dev->struct_mutex);
+	list_del(&node->head);
+	mutex_unlock(&dev->struct_mutex);
+
+	kfree(node);
+
+	drm_gem_object_unreference_unlocked(obj);
+
+	/* release reference held by exynos_drm_gem_cpu_prep_ioctl() */
 	drm_gem_object_unreference_unlocked(obj);
 
 	return 0;
