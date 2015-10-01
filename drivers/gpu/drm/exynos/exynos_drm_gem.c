@@ -156,6 +156,8 @@ static int exynos_drm_alloc_buf(struct exynos_drm_gem *exynos_gem)
 	if (!is_drm_iommu_supported(dev)) {
 		if (!(exynos_gem->flags & EXYNOS_BO_NONCONTIG))
 			return exynos_drm_alloc_dma(exynos_gem);
+	} else {
+		exynos_gem->flags &= ~EXYNOS_BO_NONCONTIG;
 	}
 
 	ret = exynos_drm_get_pages(exynos_gem);
@@ -461,10 +463,7 @@ int exynos_drm_gem_dumb_create(struct drm_file *file_priv,
 	args->pitch = args->width * ((args->bpp + 7) / 8);
 	args->size = args->pitch * args->height;
 
-	if (is_drm_iommu_supported(dev))
-		flags = EXYNOS_BO_NONCONTIG | EXYNOS_BO_WC;
-	else
-		flags = EXYNOS_BO_CONTIG | EXYNOS_BO_WC;
+	flags = EXYNOS_BO_WC;
 
 	exynos_gem = exynos_drm_gem_create(dev, flags, args->size);
 	if (IS_ERR(exynos_gem)) {
@@ -617,6 +616,17 @@ exynos_drm_gem_prime_import_sg_table(struct drm_device *dev,
 
 	exynos_gem->dma_addr = sg_dma_address(sgt->sgl);
 
+	/*
+	 * Always physically continuous memory if sgt->nents is 1. It
+	 * doesn't care if IOMMU is supported but EXYNOS_BO_NONCONTIG
+	 * flag will be cleared. It will mean the memory is continuous
+	 * for device. EXYNOS_BO_NONCONTIG flag will be set if not both.
+	 */
+	if (sgt->nents == 1 || is_drm_iommu_supported(dev))
+		exynos_gem->flags &= ~EXYNOS_BO_NONCONTIG;
+	else
+		exynos_gem->flags |= EXYNOS_BO_NONCONTIG;
+
 	npages = exynos_gem->size >> PAGE_SHIFT;
 	exynos_gem->pages = drm_malloc_ab(npages, sizeof(struct page *));
 	if (!exynos_gem->pages) {
@@ -630,19 +640,6 @@ exynos_drm_gem_prime_import_sg_table(struct drm_device *dev,
 		goto err_free_large;
 
 	exynos_gem->sgt = sgt;
-
-	if (sgt->nents == 1) {
-		/* always physically continuous memory if sgt->nents is 1. */
-		exynos_gem->flags |= EXYNOS_BO_CONTIG;
-	} else {
-		/*
-		 * this case could be CONTIG or NONCONTIG type but for now
-		 * sets NONCONTIG.
-		 * TODO. we have to find a way that exporter can notify
-		 * the type of its own buffer to importer.
-		 */
-		exynos_gem->flags |= EXYNOS_BO_NONCONTIG;
-	}
 
 	return &exynos_gem->base;
 

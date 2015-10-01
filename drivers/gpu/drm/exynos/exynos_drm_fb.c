@@ -37,32 +37,6 @@ struct exynos_drm_fb {
 	struct exynos_drm_gem	*exynos_gem[MAX_FB_BUFFER];
 };
 
-static int check_fb_gem_memory_type(struct drm_device *drm_dev,
-				    struct exynos_drm_gem *exynos_gem)
-{
-	unsigned int flags;
-
-	/*
-	 * if exynos drm driver supports iommu then framebuffer can use
-	 * all the buffer types.
-	 */
-	if (is_drm_iommu_supported(drm_dev))
-		return 0;
-
-	flags = exynos_gem->flags;
-
-	/*
-	 * without iommu support, not support physically non-continuous memory
-	 * for framebuffer.
-	 */
-	if (IS_NONCONTIG_BUFFER(flags)) {
-		DRM_ERROR("cannot use this gem memory type for fb.\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 static void exynos_drm_fb_destroy(struct drm_framebuffer *fb)
 {
 	struct exynos_drm_fb *exynos_fb = to_exynos_fb(fb);
@@ -128,9 +102,11 @@ exynos_drm_framebuffer_init(struct drm_device *dev,
 		return ERR_PTR(-ENOMEM);
 
 	for (i = 0; i < count; i++) {
-		ret = check_fb_gem_memory_type(dev, exynos_gem[i]);
-		if (ret < 0)
+		/* Not support physically non-continuous memory for FB */
+		if (exynos_gem[i]->flags & EXYNOS_BO_NONCONTIG) {
+			ret = -EINVAL;
 			goto err;
+		}
 
 		exynos_fb->exynos_gem[i] = exynos_gem[i];
 	}

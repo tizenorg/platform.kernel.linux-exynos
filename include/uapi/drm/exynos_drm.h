@@ -76,7 +76,10 @@ struct drm_exynos_vidi_connection {
 
 /* memory type definitions. */
 enum e_drm_exynos_gem_mem_type {
-	/* Physically Continuous memory and used as default. */
+	/*
+	 * Physically Continuous memory or Continuous memory for device
+	 * on IOMMU. Used as default.
+	 */
 	EXYNOS_BO_CONTIG	= 0 << 0,
 	/* Physically Non-Continuous memory. */
 	EXYNOS_BO_NONCONTIG	= 1 << 0,

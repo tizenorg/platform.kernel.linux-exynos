@@ -135,7 +135,6 @@ static int exynos_drm_fbdev_create(struct drm_fb_helper *helper,
 	struct exynos_drm_gem *exynos_gem;
 	struct drm_device *dev = helper->dev;
 	struct drm_mode_fb_cmd2 mode_cmd = { 0 };
-	struct platform_device *pdev = dev->platformdev;
 	unsigned long size;
 	int ret;
 
@@ -153,18 +152,7 @@ static int exynos_drm_fbdev_create(struct drm_fb_helper *helper,
 
 	size = mode_cmd.pitches[0] * mode_cmd.height;
 
-	exynos_gem = exynos_drm_gem_create(dev, EXYNOS_BO_CONTIG, size);
-	/*
-	 * If physically contiguous memory allocation fails and if IOMMU is
-	 * supported then try to get buffer from non physically contiguous
-	 * memory area.
-	 */
-	if (IS_ERR(exynos_gem) && is_drm_iommu_supported(dev)) {
-		dev_warn(&pdev->dev, "contiguous FB allocation failed, falling back to non-contiguous\n");
-		exynos_gem = exynos_drm_gem_create(dev, EXYNOS_BO_NONCONTIG,
-						   size);
-	}
-
+	exynos_gem = exynos_drm_gem_create(dev, 0, size);
 	if (IS_ERR(exynos_gem)) {
 		ret = PTR_ERR(exynos_gem);
 		goto out;
