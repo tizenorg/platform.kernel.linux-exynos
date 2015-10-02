@@ -3306,6 +3306,30 @@ static int smack_setprocattr(struct task_struct *p, char *name,
 	return size;
 }
 
+#ifdef CONFIG_KDBUS
+
+static int smack_kdbus_conn_talk(const struct cred *creds,
+				const struct cred *creds_peer)
+{
+	struct smk_audit_info ad;
+	struct task_smack *tsk = creds->security;
+	struct task_smack *tsk_peer = creds_peer->security;
+	struct smack_known *sskp = tsk->smk_task;
+	struct smack_known *dskp = tsk_peer->smk_task;
+	int rc;
+
+	if (smack_privileged(CAP_MAC_OVERRIDE))
+		return 0;
+
+	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_NONE);
+
+	rc = smk_access(sskp, dskp, MAY_WRITE, &ad);
+	rc = smk_bu_note("kdbus talk", sskp, dskp, MAY_WRITE, rc);
+	return rc;
+}
+
+#endif /* CONFIG_KDBUS */
+
 /**
  * smack_unix_stream_connect - Smack access on UDS
  * @sock: one sock
@@ -4292,6 +4316,10 @@ struct security_operations smack_ops = {
 
 	.getprocattr = 			smack_getprocattr,
 	.setprocattr = 			smack_setprocattr,
+
+#ifdef CONFIG_KDBUS
+	.kdbus_conn_talk = 		smack_kdbus_conn_talk,
+#endif /* CONFIG_KDBUS */
 
 	.unix_stream_connect = 		smack_unix_stream_connect,
 	.unix_may_send = 		smack_unix_may_send,
