@@ -31,7 +31,6 @@
 #include <linux/slab.h>
 #include <linux/syscalls.h>
 #include <linux/uio.h>
-#include <linux/security.h>
 
 #include "bus.h"
 #include "connection.h"
@@ -223,10 +222,6 @@ static struct kdbus_conn *kdbus_conn_new(struct kdbus_ep *ep, bool privileged,
 		}
 	}
 
-	ret = security_kdbus_conn_alloc(conn);
-	if (ret)
-		goto exit_unref;
-
 	if (atomic_inc_return(&conn->user->connections) > KDBUS_USER_MAX_CONN) {
 		/* decremented by destructor as conn->user is valid */
 		ret = -EMFILE;
@@ -281,7 +276,6 @@ static void __kdbus_conn_free(struct kref *kref)
 	kdbus_pool_free(conn->pool);
 	kdbus_ep_unref(conn->ep);
 	put_cred(conn->cred);
-	security_kdbus_conn_free(conn);
 	kfree(conn->description);
 	kfree(conn->quota);
 	kfree(conn);
@@ -1121,10 +1115,6 @@ static int kdbus_conn_reply(struct kdbus_conn *src, struct kdbus_kmsg *kmsg)
 	if (ret < 0)
 		goto exit;
 
-	ret = security_kdbus_talk(src, dst);
-	if (ret)
-		goto exit;
-
 	mutex_lock(&dst->lock);
 	reply = kdbus_reply_find(src, dst, kmsg->msg.cookie_reply);
 	if (reply) {
@@ -1214,10 +1204,6 @@ static struct kdbus_reply *kdbus_conn_call(struct kdbus_conn *src,
 	if (ret < 0)
 		goto exit;
 
-	ret = security_kdbus_talk(src, dst);
-	if (ret)
-		goto exit;
-
 	/* Disable internal kdbus policy - possibilities of connections to own,
 	 * see and talk to well-known names are restricted by LSM hooks
 	if (!kdbus_conn_policy_talk(src, current_cred(), dst)) {
@@ -1289,10 +1275,6 @@ static int kdbus_conn_unicast(struct kdbus_conn *src, struct kdbus_kmsg *kmsg)
 
 	ret = kdbus_pin_dst(bus, kmsg, &name, &dst);
 	if (ret < 0)
-		goto exit;
-
-	ret = security_kdbus_talk(src, dst);
-	if (ret)
 		goto exit;
 
 	if (is_signal) {
