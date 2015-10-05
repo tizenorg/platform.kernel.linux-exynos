@@ -287,6 +287,58 @@ int exynos_drm_gem_map_ioctl(struct drm_device *dev, void *data,
 					      &args->offset);
 }
 
+int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
+				  struct drm_file *file)
+{
+	struct drm_exynos_gem_cpu_access *args = data;
+	struct drm_gem_object *obj;
+	struct exynos_drm_gem_obj *exynos_gem;
+	struct exynos_drm_gem_buf *buf;
+
+	obj = drm_gem_object_lookup(dev, file, args->handle);
+	if (!obj) {
+		DRM_ERROR("Failed to lookup gem object\n");
+		return -EINVAL;
+	}
+
+	exynos_gem = to_exynos_gem_obj(obj);
+	buf = exynos_gem->buffer;
+
+	if (exynos_gem->flags & EXYNOS_BO_CACHABLE)
+		dma_sync_sg_for_cpu(dev->dev, buf->sgt->sgl,
+				    buf->sgt->nents, DMA_FROM_DEVICE);
+
+	drm_gem_object_unreference_unlocked(obj);
+
+	return 0;
+}
+
+int exynos_drm_gem_cpu_fini_ioctl(struct drm_device *dev, void *data,
+				  struct drm_file *file)
+{
+	struct drm_exynos_gem_cpu_access *args = data;
+	struct drm_gem_object *obj;
+	struct exynos_drm_gem_obj *exynos_gem;
+	struct exynos_drm_gem_buf *buf;
+
+	obj = drm_gem_object_lookup(dev, file, args->handle);
+	if (!obj) {
+		DRM_ERROR("Failed to lookup gem object\n");
+		return -EINVAL;
+	}
+
+	exynos_gem = to_exynos_gem_obj(obj);
+	buf = exynos_gem->buffer;
+
+	if (exynos_gem->flags & EXYNOS_BO_CACHABLE)
+		dma_sync_sg_for_device(dev->dev, buf->sgt->sgl,
+				       buf->sgt->nents, DMA_TO_DEVICE);
+
+	drm_gem_object_unreference_unlocked(obj);
+
+	return 0;
+}
+
 dma_addr_t *exynos_drm_gem_get_dma_addr(struct drm_device *dev,
 					unsigned int gem_handle,
 					struct drm_file *filp)

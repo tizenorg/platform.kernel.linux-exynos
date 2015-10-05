@@ -102,6 +102,20 @@ int exynos_drm_gem_map_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *file_priv);
 
 /*
+ * Should be used explicitly before it will be cpu access of gem object
+ * from user.
+ */
+int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
+				  struct drm_file *file_priv);
+
+/*
+ * Should be used explicitly after it is finished cpu access of gem
+ * object from user.
+ */
+int exynos_drm_gem_cpu_fini_ioctl(struct drm_device *dev, void *data,
+				  struct drm_file *file_priv);
+
+/*
  * get dma address from gem handle and this function could be used for
  * other drivers such as 2d/3d acceleration drivers.
  * with this function call, gem object reference count would be increased.

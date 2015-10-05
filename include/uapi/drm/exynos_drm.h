@@ -46,6 +46,16 @@ struct drm_exynos_gem_map {
 };
 
 /**
+ * A structure for cpu access of gem object from user.
+ *
+ * @handle: handle of gem object.
+ */
+struct drm_exynos_gem_cpu_access {
+	__u32 handle;
+	__u32 reserved;
+};
+
+/**
  * A structure to gem information.
  *
  * @handle: a handle to gem object created.
@@ -298,8 +308,10 @@ struct drm_exynos_ipp_cmd_ctrl {
 
 #define DRM_EXYNOS_GEM_CREATE		0x00
 #define DRM_EXYNOS_GEM_MAP		0x01
-/* Reserved 0x03 ~ 0x05 for exynos specific gem ioctl */
+#define DRM_EXYNOS_GEM_CPU_PREP		0x02
+#define DRM_EXYNOS_GEM_CPU_FINI		0x03
 #define DRM_EXYNOS_GEM_GET		0x04
+/* Reserved 0x05 ~ 0x06 for exynos specific gem ioctl */
 #define DRM_EXYNOS_VIDI_CONNECTION	0x07
 
 /* G2D */
@@ -317,6 +329,10 @@ struct drm_exynos_ipp_cmd_ctrl {
 		DRM_EXYNOS_GEM_CREATE, struct drm_exynos_gem_create)
 #define DRM_IOCTL_EXYNOS_GEM_MAP		DRM_IOWR(DRM_COMMAND_BASE + \
 		DRM_EXYNOS_GEM_MAP, struct drm_exynos_gem_map)
+#define DRM_IOCTL_EXYNOS_GEM_CPU_PREP		DRM_IOWR(DRM_COMMAND_BASE + \
+		DRM_EXYNOS_GEM_CPU_PREP, struct drm_exynos_gem_cpu_access)
+#define DRM_IOCTL_EXYNOS_GEM_CPU_FINI		DRM_IOWR(DRM_COMMAND_BASE + \
+		DRM_EXYNOS_GEM_CPU_FINI, struct drm_exynos_gem_cpu_access)
 #define DRM_IOCTL_EXYNOS_GEM_GET	DRM_IOWR(DRM_COMMAND_BASE + \
 		DRM_EXYNOS_GEM_GET,	struct drm_exynos_gem_info)
 
