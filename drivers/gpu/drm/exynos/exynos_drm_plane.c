@@ -165,7 +165,9 @@ static int exynos_plane_fence(struct exynos_drm_plane *plane,
 		return ret;
 
 	list_for_each_entry(node, resv_list, head) {
-		ret = exynos_fence_wait(node->obj, false);
+		printk("[%d] %s\n", __LINE__, __func__);
+		ret = exynos_fence_wait(node->obj, false, 1 * HZ);
+		printk("[%d] %s, ret: %d\n", __LINE__, __func__, ret);
 		if (ret < 0) {
 			DRM_ERROR("Failed to wait exclusive fence: %d\n", ret);
 			goto out;

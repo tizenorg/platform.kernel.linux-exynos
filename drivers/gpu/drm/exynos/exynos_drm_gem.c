@@ -405,7 +405,7 @@ int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
 
 	ww_mutex_lock(&exynos_gem->resv->lock, NULL);
 
-	ret = exynos_fence_wait(exynos_gem->resv, exclusive);
+	ret = exynos_fence_wait(exynos_gem->resv, exclusive, 1 * HZ);
 	if (ret < 0)
 		goto err_unlock;
 

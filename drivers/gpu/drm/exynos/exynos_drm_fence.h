@@ -31,7 +31,8 @@ struct exynos_drm_resv_node {
 
 int exynos_fence_locks(struct list_head *list, struct ww_acquire_ctx *ctx);
 void exynos_fence_unlocks(struct list_head *list, struct ww_acquire_ctx *ctx);
-int exynos_fence_wait(struct reservation_object *obj, bool exclusive);
+int exynos_fence_wait(struct reservation_object *obj, bool exclusive,
+		      unsigned long timeout);
 void exynos_fence_signal(struct exynos_drm_fence *exynos_fence);
 struct exynos_drm_fence *exynos_fence_create(unsigned int context,
 					     unsigned int seqno);

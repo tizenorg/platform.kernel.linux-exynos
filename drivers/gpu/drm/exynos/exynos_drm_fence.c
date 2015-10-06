@@ -88,7 +88,8 @@ void exynos_fence_unlocks(struct list_head *list, struct ww_acquire_ctx *ctx)
 	ww_acquire_fini(ctx);
 }
 
-int exynos_fence_wait(struct reservation_object *obj, bool exclusive)
+int exynos_fence_wait(struct reservation_object *obj, bool exclusive,
+		      unsigned long timeout)
 {
 	struct reservation_object_list *fobj;
 	struct fence *excl;
@@ -98,7 +99,9 @@ int exynos_fence_wait(struct reservation_object *obj, bool exclusive)
 	excl = reservation_object_get_excl(obj);
 
 	if (excl) {
-		ret = fence_wait(excl, true);
+		ret = fence_wait_timeout(excl, true, timeout);
+		if (ret == 0)
+			ret = -EBUSY;
 		if (ret < 0)
 			return ret;
 	}
@@ -114,7 +117,9 @@ int exynos_fence_wait(struct reservation_object *obj, bool exclusive)
 		fence = rcu_dereference_protected(fobj->shared[i],
 						  reservation_object_held(obj));
 
-		ret = fence_wait(fence, true);
+		ret = fence_wait_timeout(fence, true, timeout);
+		if (ret == 0)
+			ret = -EBUSY;
 		if (ret < 0)
 			return ret;
 	}
