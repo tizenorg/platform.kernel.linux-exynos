@@ -49,3 +49,15 @@
 		shunt-resistor = <10000>;
 	};
 };
+
+&sound {
+	compatible = "samsung,odroidu3-audio";
+	samsung,model = "Odroid-XU3";
+	samsung,audio-routing =
+		"Headphone Jack", "HPL",
+		"Headphone Jack", "HPR",
+		"Headphone Jack", "MICBIAS",
+		"IN1", "Headphone Jack",
+		"Speakers", "SPKL",
+		"Speakers", "SPKR";
+};

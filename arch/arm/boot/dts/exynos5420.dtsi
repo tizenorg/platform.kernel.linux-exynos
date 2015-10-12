@@ -467,7 +467,6 @@
 		clock-names = "iis", "i2s_opclk0", "i2s_opclk1";
 		#clock-cells = <1>;
 		clock-output-names = "i2s_cdclk0";
-		#sound-dai-cells = <1>;
 		samsung,idma-addr = <0x03000000>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2s0_bus>;
@@ -484,7 +483,6 @@
 		clock-names = "iis", "i2s_opclk0";
 		#clock-cells = <1>;
 		clock-output-names = "i2s_cdclk1";
-		#sound-dai-cells = <1>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2s1_bus>;
 		status = "disabled";
@@ -500,7 +498,6 @@
 		clock-names = "iis", "i2s_opclk0";
 		#clock-cells = <1>;
 		clock-output-names = "i2s_cdclk2";
-		#sound-dai-cells = <1>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2s2_bus>;
 		status = "disabled";
