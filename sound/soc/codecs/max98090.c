@@ -2198,7 +2198,7 @@ static void max98090_jack_work(struct work_struct *work)
 		snd_soc_update_bits(codec, M98090_REG_JACK_DETECT,
 			M98090_JDWK_MASK, 0);
 
-		msleep(50);
+		msleep(200);
 
 		reg = snd_soc_read(codec, M98090_REG_JACK_STATUS);
 
