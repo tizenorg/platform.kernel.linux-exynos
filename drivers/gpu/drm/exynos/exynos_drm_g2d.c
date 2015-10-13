@@ -361,6 +361,7 @@ static void g2d_userptr_put_dma_addr(struct drm_device *drm_dev,
 {
 	struct g2d_cmdlist_userptr *g2d_userptr =
 					(struct g2d_cmdlist_userptr *)obj;
+	struct sg_table *sgt;
 	struct page **pages;
 
 	if (!obj)
@@ -378,8 +379,8 @@ static void g2d_userptr_put_dma_addr(struct drm_device *drm_dev,
 		return;
 
 out:
-	exynos_gem_unmap_sgt_from_dma(drm_dev, g2d_userptr->sgt,
-					DMA_BIDIRECTIONAL);
+	sgt = g2d_userptr->sgt;
+	dma_unmap_sg(drm_dev->dev, sgt->sgl, sgt->nents, DMA_BIDIRECTIONAL);
 
 	pages = frame_vector_pages(g2d_userptr->vec);
 	if (!IS_ERR(pages)) {
@@ -496,9 +497,8 @@ static dma_addr_t *g2d_userptr_get_dma_addr(struct drm_device *drm_dev,
 
 	g2d_userptr->sgt = sgt;
 
-	ret = exynos_gem_map_sgt_with_dma(drm_dev, g2d_userptr->sgt,
-						DMA_BIDIRECTIONAL);
-	if (ret < 0) {
+	if (!dma_map_sg(drm_dev->dev, sgt->sgl, sgt->nents,
+				DMA_BIDIRECTIONAL)) {
 		DRM_ERROR("failed to map sgt with dma region.\n");
 		goto err_sg_free_table;
 	}
