@@ -69,6 +69,52 @@ static struct snd_soc_jack_pin odroidu3_hs_jack_pins[] = {
 
 static struct snd_soc_jack odroidu3_headset_jack;
 
+static struct class *audio_class;
+static struct device *jack_dev;
+
+static ssize_t earjack_select_jack_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return 0;
+}
+
+static ssize_t earjack_select_jack_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t size)
+{
+	if ((!size))
+		return 0;
+
+	switch (buf[0]) {
+	case '1':
+		snd_soc_jack_report(&odroidu3_headset_jack, SND_JACK_HEADPHONE, SND_JACK_VIDEOOUT | SND_JACK_HEADSET);
+		break;
+	case '2':
+		snd_soc_jack_report(&odroidu3_headset_jack, SND_JACK_MICROPHONE, SND_JACK_VIDEOOUT | SND_JACK_HEADSET);
+		break;
+	case '3':
+		snd_soc_jack_report(&odroidu3_headset_jack, SND_JACK_HEADSET, SND_JACK_VIDEOOUT | SND_JACK_HEADSET);
+		break;
+	case '4':
+		snd_soc_jack_report(&odroidu3_headset_jack, SND_JACK_VIDEOOUT, SND_JACK_VIDEOOUT | SND_JACK_HEADSET);
+		break;
+	default:
+		snd_soc_jack_report(&odroidu3_headset_jack, SND_JACK_LINEOUT, SND_JACK_VIDEOOUT | SND_JACK_HEADSET);
+	}
+
+	return size;
+}
+
+static DEVICE_ATTR(select_jack, S_IRUGO | S_IWUSR | S_IWGRP,
+		   earjack_select_jack_show, earjack_select_jack_store);
+
+static void test_jack_manually(struct snd_soc_codec *codec)
+{
+	audio_class = class_create(THIS_MODULE, "wm1811_jack");
+	jack_dev = device_create(audio_class, NULL, 0, codec, "jack");
+
+	device_create_file(jack_dev, &dev_attr_select_jack);
+}
+
 static int odroidx2_init(struct snd_soc_pcm_runtime *runtime)
 {
 	struct snd_soc_codec *codec = runtime->codec;
@@ -76,7 +122,7 @@ static int odroidx2_init(struct snd_soc_pcm_runtime *runtime)
 	int ret;
 
 	if (!strcmp(card->name, "Odroid-XU3")) {
-		ret = snd_soc_jack_new(codec, "Headset Jack", SND_JACK_HEADSET,
+		ret = snd_soc_jack_new(codec, "Headset Jack", SND_JACK_HEADSET | SND_JACK_VIDEOOUT,
 				       &odroidu3_headset_jack);
 		if (ret) {
 			dev_err(card->dev, "Failed to create jack: %d\n", ret);
@@ -90,6 +136,8 @@ static int odroidx2_init(struct snd_soc_pcm_runtime *runtime)
 			dev_err(card->dev, "Failed to add pins: %d\n", ret);
 			return ret;
 		}
+
+		test_jack_manually(codec);
 
 		return max98090_mic_detect(codec, &odroidu3_headset_jack);
 	}
