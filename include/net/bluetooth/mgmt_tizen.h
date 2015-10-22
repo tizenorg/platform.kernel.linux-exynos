@@ -120,6 +120,10 @@ struct mgmt_cp_stop_le_discovery {
 } __packed;
 #define MGMT_STOP_LE_DISCOVERY_SIZE		1
 
+/* BEGIN TIZEN_Bluetooth :: LE auto connection */
+#define MGMT_OP_DISABLE_LE_AUTO_CONNECT		(TIZEN_OP_CODE_BASE + 0x0c)
+#define MGMT_DISABLE_LE_AUTO_CONNECT_SIZE	0
+/* END TIZEN_Bluetooth */
 /* BEGIN TIZEN_Bluetooth :: name update changes */
 #define MGMT_EV_DEVICE_NAME_UPDATE		(TIZEN_EV_BASE + 0x01)
 struct mgmt_ev_device_name_update {
