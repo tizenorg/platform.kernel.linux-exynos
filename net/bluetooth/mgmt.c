@@ -315,6 +315,32 @@ static int cmd_complete(struct sock *sk, u16 index, u16 cmd, u8 status,
 	return err;
 }
 
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: check for le connection update params */
+static inline int check_le_conn_update_param(u16 min, u16 max, u16 latency,
+					u16 to_multiplier)
+{
+	u16 max_latency;
+
+	if (min > max || min < 6 || max > 3200)
+		return -EINVAL;
+
+	if (to_multiplier < 10 || to_multiplier > 3200)
+		return -EINVAL;
+
+	if (max >= to_multiplier * 8)
+		return -EINVAL;
+
+	max_latency = (to_multiplier * 8 / max) - 1;
+
+	if (latency > 499 || latency > max_latency)
+		return -EINVAL;
+
+	return 0;
+}
+/* END TIZEN_Bluetooth */
+#endif
+
 static int read_version(struct sock *sk, struct hci_dev *hdev, void *data,
 			u16 data_len)
 {
@@ -5071,8 +5097,57 @@ static int disable_le_auto_connect(struct sock *sk, struct hci_dev *hdev,
 	return err;
 }
 /* END TIZEN_Bluetooth */
-#endif
+
+/* BEGIN TIZEN_Bluetooth :: LE connection Update */
+static int le_conn_update(struct sock *sk, struct hci_dev *hdev, void *data,
+			u16 len)
+{
+	struct mgmt_cp_le_conn_update *cp = data;
+
+	struct hci_conn *conn;
+	u16 min, max, latency, supervision_timeout;
+	int err = -1;
+
+	if (!hdev_is_powered(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_LE_CONN_UPDATE,
+				MGMT_STATUS_NOT_POWERED);
+
+	min     = __le16_to_cpu(cp->conn_interval_min);
+	max     = __le16_to_cpu(cp->conn_interval_max);
+	latency     = __le16_to_cpu(cp->conn_latency);
+	supervision_timeout = __le16_to_cpu(cp->supervision_timeout);
+
+	BT_DBG("min 0x%4.4x max 0x%4.4x latency: 0x%4.4x supervision_timeout: 0x%4.4x",
+			min, max, latency, supervision_timeout);
+
+	err = check_le_conn_update_param(min, max, latency, supervision_timeout);
+
+	if (err < 0) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_LE_CONN_UPDATE,
+				MGMT_STATUS_INVALID_PARAMS);
+
+		goto done;
+	}
+
+	hci_dev_lock(hdev);
+	conn = hci_conn_hash_lookup_ba(hdev, LE_LINK, &cp->bdaddr);
+
+	if (!conn) {
+		cmd_status(sk, hdev->id, MGMT_OP_LE_CONN_UPDATE,
+				MGMT_STATUS_NOT_CONNECTED);
+		goto done;
+	}
+
+	hci_le_conn_update(conn, min, max, latency, supervision_timeout);
+
+	err = cmd_complete(sk, hdev->id, MGMT_OP_LE_CONN_UPDATE, 0,
+				NULL, 0);
+done:
+	hci_dev_unlock(hdev);
+	return err;
+}
 /* END TIZEN_Bluetooth */
+#endif
 
 static void fast_connectable_complete(struct hci_dev *hdev, u8 status,
 				      u16 opcode)
@@ -7505,6 +7580,7 @@ static const struct mgmt_handler tizen_mgmt_handlers[] = {
 	{ start_le_discovery,      false, MGMT_START_LE_DISCOVERY_SIZE },
 	{ stop_le_discovery,       false, MGMT_STOP_LE_DISCOVERY_SIZE },
 	{ disable_le_auto_connect, false, MGMT_DISABLE_LE_AUTO_CONNECT_SIZE },
+	{ le_conn_update,          false, MGMT_LE_CONN_UPDATE_SIZE},
 };
 #endif
 
