@@ -135,6 +135,12 @@ struct mgmt_cp_le_conn_update {
 	bdaddr_t bdaddr;
 } __packed;
 
+#define MGMT_OP_SET_MANUFACTURER_DATA		(TIZEN_OP_CODE_BASE + 0x0e)
+struct mgmt_cp_set_manufacturer_data {
+	__u8 data[28];
+} __packed;
+#define MGMT_SET_MANUFACTURER_DATA_SIZE		28
+
 /* BEGIN TIZEN_Bluetooth :: name update changes */
 #define MGMT_EV_DEVICE_NAME_UPDATE		(TIZEN_EV_BASE + 0x01)
 struct mgmt_ev_device_name_update {
