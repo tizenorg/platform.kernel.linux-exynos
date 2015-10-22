@@ -368,6 +368,13 @@ struct hci_dev {
 	__u32			rpa_timeout;
 	struct delayed_work	rpa_expired;
 	bdaddr_t		rpa;
+ #ifdef CONFIG_TIZEN_WIP
+	__u8			adv_filter_policy;
+	__u8			adv_type;
+
+	__u8			manufacturer_len;
+	__u8			manufacturer_data[HCI_MAX_AD_LENGTH - 3];
+#endif
 
 	int (*open)(struct hci_dev *hdev);
 	int (*close)(struct hci_dev *hdev);

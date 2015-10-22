@@ -455,6 +455,11 @@ enum {
 #define EIR_SSP_HASH_C		0x0E /* Simple Pairing Hash C */
 #define EIR_SSP_RAND_R		0x0F /* Simple Pairing Randomizer R */
 #define EIR_DEVICE_ID		0x10 /* device ID */
+#ifdef CONFIG_TIZEN_WIP
+#define EIR_SOLICIT_UUID16	0x14 /* 16-bit Solicitation UUID */
+#define EIR_MANUFACTURER_DATA	0XFF /*Manufacturer Specific Data*/
+#define EIR_GAP_APPEARANCE      0x19 /* GAP appearance */
+#endif
 
 /* Low Energy Advertising Flags */
 #define LE_AD_LIMITED		0x01 /* Limited Discoverable */

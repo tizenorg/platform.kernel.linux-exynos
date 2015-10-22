@@ -32,6 +32,9 @@
 #include <net/bluetooth/l2cap.h>
 #include <net/bluetooth/mgmt.h>
 
+#ifdef CONFIG_TIZEN_WIP
+#include <net/bluetooth/mgmt_tizen.h>
+#endif
 #include "hci_request.h"
 #include "smp.h"
 
@@ -817,6 +820,11 @@ static void update_scan_rsp_data(struct hci_request *req)
 
 	len = create_scan_rsp_data(hdev, cp.data);
 
+#ifdef  CONFIG_TIZEN_WIP
+	/* Advertising scan response data is handled in bluez.
+	      This value will be updated only when application request the update */
+	return;
+#else
 	if (hdev->scan_rsp_data_len == len &&
 	    memcmp(cp.data, hdev->scan_rsp_data, len) == 0)
 		return;
@@ -827,6 +835,7 @@ static void update_scan_rsp_data(struct hci_request *req)
 	cp.length = len;
 
 	hci_req_add(req, HCI_OP_LE_SET_SCAN_RSP_DATA, sizeof(cp), &cp);
+#endif
 }
 
 static u8 get_adv_discov_flags(struct hci_dev *hdev)
@@ -898,6 +907,11 @@ static void update_adv_data(struct hci_request *req)
 
 	len = create_adv_data(hdev, cp.data);
 
+#ifdef  CONFIG_TIZEN_WIP
+	/* Bluez will handle the advertising data, including the flag and tx power.
+	    This value will be updated only when application request the update */
+		return;
+#else
 	if (hdev->adv_data_len == len &&
 	    memcmp(cp.data, hdev->adv_data, len) == 0)
 		return;
@@ -908,6 +922,7 @@ static void update_adv_data(struct hci_request *req)
 	cp.length = len;
 
 	hci_req_add(req, HCI_OP_LE_SET_ADV_DATA, sizeof(cp), &cp);
+#endif
 }
 
 int mgmt_update_adv_data(struct hci_dev *hdev)
@@ -1092,7 +1107,15 @@ static void enable_advertising(struct hci_request *req)
 	memset(&cp, 0, sizeof(cp));
 	cp.min_interval = cpu_to_le16(hdev->le_adv_min_interval);
 	cp.max_interval = cpu_to_le16(hdev->le_adv_max_interval);
+#ifdef CONFIG_TIZEN_WIP
+	cp.filter_policy = hdev->adv_filter_policy;
+	if (hdev->adv_type != LE_ADV_SCAN_IND)
+		cp.type = connectable ? LE_ADV_IND : LE_ADV_NONCONN_IND;
+	else
+		cp.type = hdev->adv_type;
+#else
 	cp.type = connectable ? LE_ADV_IND : LE_ADV_NONCONN_IND;
+#endif
 	cp.own_address_type = own_addr_type;
 	cp.channel_map = hdev->le_adv_channel_map;
 
@@ -5108,6 +5131,215 @@ static int load_irks(struct sock *sk, struct hci_dev *hdev, void *cp_data,
 	return err;
 }
 
+#ifdef CONFIG_TIZEN_WIP
+static int set_advertising_params(struct sock *sk, struct hci_dev *hdev,
+		                  void *data, u16 len)
+{
+	struct mgmt_cp_set_advertising_params *cp = data;
+	__u16 min_interval;
+	__u16 max_interval;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_PARAMS,
+				MGMT_STATUS_NOT_SUPPORTED);
+
+	if (test_bit(HCI_ADVERTISING, &hdev->dev_flags))
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_PARAMS,
+				MGMT_STATUS_BUSY);
+
+	min_interval = __le16_to_cpu(cp->interval_min);
+	max_interval = __le16_to_cpu(cp->interval_max);
+
+	if (min_interval > max_interval ||
+	    min_interval < 0x0020 || max_interval > 0x4000)
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_PARAMS,
+				MGMT_STATUS_INVALID_PARAMS);
+
+	hci_dev_lock(hdev);
+
+	hdev->le_adv_min_interval = min_interval;
+	hdev->le_adv_max_interval = max_interval;
+	hdev->adv_filter_policy = cp->filter_policy;
+	hdev->adv_type = cp->type;
+
+	err = cmd_complete(sk, hdev->id, MGMT_OP_SET_ADVERTISING_PARAMS, 0, NULL, 0);
+
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static void set_advertising_data_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct mgmt_cp_set_advertising_data *cp;
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_SET_ADVERTISING_DATA, hdev);
+	if (!cmd)
+		goto unlock;
+
+	cp = cmd->param;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_SET_ADVERTISING_DATA,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_SET_ADVERTISING_DATA, 0,
+			     cp, sizeof(*cp));
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int set_advertising_data(struct sock *sk, struct hci_dev *hdev,
+		                void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	struct mgmt_cp_set_advertising_data *cp = data;
+	struct hci_cp_le_set_adv_data adv;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev)) {
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_DATA,
+				MGMT_STATUS_NOT_SUPPORTED);
+	}
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_SET_ADVERTISING_DATA, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_DATA,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_SET_ADVERTISING_DATA,
+			       hdev, data, len);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	if (len > HCI_MAX_AD_LENGTH) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_ADVERTISING_DATA,
+				 MGMT_STATUS_INVALID_PARAMS);
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	memset(&adv, 0, sizeof(adv));
+	memcpy(adv.data, cp->data, len);
+	adv.length = len;
+
+	hci_req_add(&req, HCI_OP_LE_SET_ADV_DATA, sizeof(adv), &adv);
+
+	err = hci_req_run(&req, set_advertising_data_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static void set_scan_rsp_data_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct mgmt_cp_set_scan_rsp_data *cp;
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_SET_SCAN_RSP_DATA, hdev);
+	if (!cmd)
+		goto unlock;
+
+	cp = cmd->param;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_SET_SCAN_RSP_DATA,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_SET_SCAN_RSP_DATA, 0,
+			     cp, sizeof(*cp));
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int set_scan_rsp_data(struct sock *sk, struct hci_dev *hdev, void *data,
+		             u16 len)
+{
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	struct mgmt_cp_set_scan_rsp_data *cp = data;
+	struct hci_cp_le_set_scan_rsp_data rsp;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_SET_SCAN_RSP_DATA,
+				MGMT_STATUS_NOT_SUPPORTED);
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_SET_SCAN_RSP_DATA, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_SCAN_RSP_DATA,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_SET_SCAN_RSP_DATA, hdev, data, len);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+	if (len > HCI_MAX_AD_LENGTH) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_SET_SCAN_RSP_DATA,
+				 MGMT_STATUS_INVALID_PARAMS);
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	memset(&rsp, 0, sizeof(rsp));
+	memcpy(rsp.data, cp->data, len);
+	rsp.length = len;
+
+	hci_req_add(&req, HCI_OP_LE_SET_SCAN_RSP_DATA, sizeof(rsp), &rsp);
+
+	err = hci_req_run(&req, set_scan_rsp_data_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+/* END TIZEN_Bluetooth */
+#endif
+
 static bool ltk_is_valid(struct mgmt_ltk_info *key)
 {
 	if (key->master != 0x00 && key->master != 0x01)
@@ -6163,6 +6395,15 @@ static const struct mgmt_handler {
 	{ start_service_discovery,true,  MGMT_START_SERVICE_DISCOVERY_SIZE },
 };
 
+#ifdef CONFIG_TIZEN_WIP
+static const struct mgmt_handler tizen_mgmt_handlers[] = {
+	{ NULL }, /* 0x0000 (no command) */
+	{ set_advertising_params,  false, MGMT_SET_ADVERTISING_PARAMS_SIZE },
+	{ set_advertising_data,    true, MGMT_SET_ADV_MIN_APP_DATA_SIZE },
+	{ set_scan_rsp_data,       true, MGMT_SET_SCAN_RSP_MIN_APP_DATA_SIZE },
+};
+#endif
+
 int mgmt_control(struct sock *sk, struct msghdr *msg, size_t msglen)
 {
 	void *buf;
@@ -6225,6 +6466,17 @@ int mgmt_control(struct sock *sk, struct msghdr *msg, size_t msglen)
 
 	if (opcode >= ARRAY_SIZE(mgmt_handlers) ||
 	    mgmt_handlers[opcode].func == NULL) {
+#ifdef CONFIG_TIZEN_WIP
+		u16 tizen_opcode = opcode - TIZEN_OP_CODE_BASE;
+
+		if (tizen_opcode > 0 &&
+		    tizen_opcode < ARRAY_SIZE(tizen_mgmt_handlers) &&
+		    tizen_mgmt_handlers[tizen_opcode].func) {
+
+		    handler = &tizen_mgmt_handlers[tizen_opcode];
+		    goto handle_mgmt;
+		}
+#endif
 		BT_DBG("Unknown op %u", opcode);
 		err = cmd_status(sk, index, opcode,
 				 MGMT_STATUS_UNKNOWN_COMMAND);
@@ -6247,6 +6499,9 @@ int mgmt_control(struct sock *sk, struct msghdr *msg, size_t msglen)
 
 	handler = &mgmt_handlers[opcode];
 
+#ifdef CONFIG_TIZEN_WIP
+handle_mgmt:
+#endif
 	if ((handler->var_len && len < handler->data_len) ||
 	    (!handler->var_len && len != handler->data_len)) {
 		err = cmd_status(sk, index, opcode,
