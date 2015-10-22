@@ -40,6 +40,20 @@ struct sco_param {
 	u16 max_latency;
 	u8  retrans_effort;
 };
+#ifdef CONFIG_TIZEN_WIP
+static const struct sco_param esco_param_cvsd[] = {
+	{ (EDR_ESCO_MASK & ~ESCO_2EV3) | SCO_ESCO_MASK | ESCO_EV3 , 0x000a, 0x01 }, /* S3 */
+	{ EDR_ESCO_MASK & ~ESCO_2EV3, 0x0007,	0x01 }, /* S2 */
+	{ EDR_ESCO_MASK | ESCO_EV3,   0x0007,	0x01 }, /* S1 */
+	{ EDR_ESCO_MASK | ESCO_HV3,   0xffff,	0x01 }, /* D1 */
+	{ EDR_ESCO_MASK | ESCO_HV1,   0xffff,	0x01 }, /* D0 */
+};
+
+static const struct sco_param esco_param_msbc[] = {
+	{ (EDR_ESCO_MASK & ~ESCO_2EV3) | ESCO_EV3, 0x000d, 0x02 }, /* T2 */
+	{ EDR_ESCO_MASK | ESCO_EV3,   0x0008,	0x02 }, /* T1 */
+};
+#else
 
 static const struct sco_param esco_param_cvsd[] = {
 	{ EDR_ESCO_MASK & ~ESCO_2EV3, 0x000a,	0x01 }, /* S3 */
@@ -49,14 +63,15 @@ static const struct sco_param esco_param_cvsd[] = {
 	{ EDR_ESCO_MASK | ESCO_HV1,   0xffff,	0x01 }, /* D0 */
 };
 
-static const struct sco_param sco_param_cvsd[] = {
-	{ EDR_ESCO_MASK | ESCO_HV3,   0xffff,	0xff }, /* D1 */
-	{ EDR_ESCO_MASK | ESCO_HV1,   0xffff,	0xff }, /* D0 */
-};
-
 static const struct sco_param esco_param_msbc[] = {
 	{ EDR_ESCO_MASK & ~ESCO_2EV3, 0x000d,	0x02 }, /* T2 */
 	{ EDR_ESCO_MASK | ESCO_EV3,   0x0008,	0x02 }, /* T1 */
+};
+#endif
+
+static const struct sco_param sco_param_cvsd[] = {
+	{ EDR_ESCO_MASK | ESCO_HV3,   0xffff,	0xff }, /* D1 */
+	{ EDR_ESCO_MASK | ESCO_HV1,   0xffff,	0xff }, /* D0 */
 };
 
 static void hci_le_create_connection_cancel(struct hci_conn *conn)

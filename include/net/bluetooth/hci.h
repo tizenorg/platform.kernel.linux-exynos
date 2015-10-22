@@ -517,6 +517,31 @@ struct hci_cp_accept_conn_req {
 	__u8     role;
 } __packed;
 
+#ifdef CONFIG_TIZEN_WIP /* WBC/NBC feature */
+#define HCI_BCM_ENABLE_WBS_REQ		0xfc7e /* 0x3f7e */
+struct hci_cp_bcm_wbs_req {
+	__u8     role;
+	__le16   pkt_type;
+} __packed;
+
+#define HCI_BCM_I2C_PCM_REQ		0xfc6d /* 0x3f6d */
+struct hci_cp_i2c_pcm_req {
+	__u8     i2c_enable;
+	__u8     is_master;
+	__u8     pcm_rate;
+	__u8     clock_rate;
+} __packed;
+
+#define HCI_BCM_SCO_PCM_REQ		0xfc1c /* 0x3f1c */
+struct hci_cp_sco_pcm_req {
+	__u8     sco_routing;
+	__u8     pcm_rate;
+	__u8     frame_type;
+	__u8     sync_mode;
+	__u8   clock_mode;
+} __packed;
+#endif /* WBC/NBC feature */
+
 #define HCI_OP_REJECT_CONN_REQ		0x040a
 struct hci_cp_reject_conn_req {
 	bdaddr_t bdaddr;

@@ -473,6 +473,9 @@ struct hci_conn {
 #ifdef CONFIG_TIZEN_WIP
 /* BEGIN TIZEN_Bluetooth :: RSSI Monitoring */
 	bool		rssi_monitored;
+/* END TIZEN_Bluetooth :: RSSI Monitoring */
+	__u8		sco_role;
+	__u16		voice_setting;
 #endif
 	void (*connect_cfm_cb)	(struct hci_conn *conn, u8 status);
 	void (*security_cfm_cb)	(struct hci_conn *conn, u8 status);
@@ -767,6 +770,26 @@ static inline struct hci_conn *hci_conn_hash_lookup_ba(struct hci_dev *hdev,
 }
 
 #ifdef CONFIG_TIZEN_WIP
+
+static inline struct hci_conn *hci_conn_hash_lookup_sco(struct hci_dev *hdev)
+{
+        struct hci_conn_hash *h = &hdev->conn_hash;
+        struct hci_conn  *c;
+
+        rcu_read_lock();
+
+        list_for_each_entry_rcu(c, &h->list, list) {
+                if (c->type == SCO_LINK || c->type == ESCO_LINK) {
+                        rcu_read_unlock();
+                        return c;
+                }
+        }
+
+        rcu_read_unlock();
+
+        return NULL;
+}
+
 /* BEGIN TIZEN_Bluetooth :: RSSI Monitoring */
 static inline bool hci_conn_rssi_state_set(struct hci_dev *hdev,
 					__u8 type, bdaddr_t *ba, bool value)
