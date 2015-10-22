@@ -7812,6 +7812,32 @@ void mgmt_device_connected(struct hci_dev *hdev, struct hci_conn *conn,
 		    sizeof(*ev) + eir_len, NULL);
 }
 
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: name update changes */
+int mgmt_device_name_update(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 *name,
+			    u8 name_len)
+{
+	char buf[512];
+	struct mgmt_ev_device_name_update *ev = (void *) buf;
+	u16 eir_len = 0;
+
+	if (name_len <= 0)
+		return -EINVAL;
+
+	bacpy(&ev->addr.bdaddr, bdaddr);
+	ev->addr.type = BDADDR_BREDR;
+
+	eir_len = eir_append_data(ev->eir, 0, EIR_NAME_COMPLETE, name,
+				  name_len);
+
+	ev->eir_len = cpu_to_le16(eir_len);
+
+	return mgmt_event(MGMT_EV_DEVICE_NAME_UPDATE, hdev, buf,
+			  sizeof(*ev) + eir_len, NULL);
+}
+/* END TIZEN_Bluetooth :: name update changes */
+#endif
+
 static void disconnect_rsp(struct pending_cmd *cmd, void *data)
 {
 	struct sock **sk = data;

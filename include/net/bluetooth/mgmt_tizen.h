@@ -107,8 +107,16 @@ struct mgmt_cc_rp_disable_rssi {
 	__s8    link_type;
 } __packed;
 /* END TIZEN_Bluetooth :: RSSI monitoring */
+/* BEGIN TIZEN_Bluetooth :: name update changes */
+#define MGMT_EV_DEVICE_NAME_UPDATE		(TIZEN_EV_BASE + 0x01)
+struct mgmt_ev_device_name_update {
+	struct mgmt_addr_info addr;
+	__le16  eir_len;
+	__u8    eir[0];
+} __packed;
+/* END TIZEN_Bluetooth :: name update changes */
 /* BEGIN TIZEN_Bluetooth :: Add handling of RSSI Events   */
-#define MGMT_EV_RSSI_ALERT			(TIZEN_EV_BASE + 0x01)
+#define MGMT_EV_RSSI_ALERT			(TIZEN_EV_BASE + 0x02)
 struct mgmt_ev_vendor_specific_rssi_alert {
 	bdaddr_t bdaddr;
 	__s8     link_type;
@@ -116,7 +124,7 @@ struct mgmt_ev_vendor_specific_rssi_alert {
 	__s8     rssi_dbm;
 } __packed;
 
-#define MGMT_EV_RAW_RSSI			(TIZEN_EV_BASE + 0x02)
+#define MGMT_EV_RAW_RSSI			(TIZEN_EV_BASE + 0x03)
 struct mgmt_cc_rp_get_raw_rssi {
 	__u8     status;
 	__s8     rssi_dbm;
@@ -124,8 +132,8 @@ struct mgmt_cc_rp_get_raw_rssi {
 	bdaddr_t bt_address;
 } __packed;
 
-#define MGMT_EV_RSSI_ENABLED			(TIZEN_EV_BASE + 0x03)
+#define MGMT_EV_RSSI_ENABLED			(TIZEN_EV_BASE + 0x04)
 
-#define MGMT_EV_RSSI_DISABLED			(TIZEN_EV_BASE + 0x04)
+#define MGMT_EV_RSSI_DISABLED			(TIZEN_EV_BASE + 0x05)
 /* END TIZEN_Bluetooth :: Handling of RSSI Events */
 #endif   /* CONFIG_TIZEN_WIP */
