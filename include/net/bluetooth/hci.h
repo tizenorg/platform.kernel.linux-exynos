@@ -1429,6 +1429,58 @@ struct hci_cp_le_conn_param_req_neg_reply {
 	__u8	reason;
 } __packed;
 
+#ifdef CONFIG_TIZEN_WIP
+/** Vendor Specific HCI Command
+ * Vendor: Broadcom
+ * Purpose: This HCI is used to enable RSSI monitoring and setting
+ * Threshold Values for LE Link
+ **/
+#define HCI_OP_ENABLE_RSSI		0xfce9
+
+struct hci_cp_set_enable_rssi {
+	__u8    hci_le_ext_opcode;
+	__u8    le_enable_cs_Features;
+	__u8    data[3];
+} __packed;
+
+struct hci_cp_set_rssi_threshold {
+	__u8    hci_le_ext_opcode;
+	__u8    mode;
+	__le16  conn_handle;
+	__u8    alert_mask;
+	__u8    low_th;
+	__u8    in_range_th;
+	__u8    high_th;
+} __packed;
+
+struct hci_cc_rsp_enable_rssi {
+	__u8     status;
+	__u8     le_ext_opcode;
+} __packed;
+
+struct hci_ev_vendor_specific_rssi_alert {
+	__le16   conn_handle ;
+	__s8     alert_type;
+	__s8     rssi_dbm;
+} __packed;
+
+/** Vendor Specific HCI Command
+ * Vendor: Broadcom
+ * Purpose: This HCI is used to get Raw RSSI value for a Link
+ **/
+#define HCI_OP_GET_RAW_RSSI		0xfc48
+
+struct hci_cp_get_raw_rssi {
+	__le16   conn_handle;
+} __packed;
+
+struct hci_cc_rp_get_raw_rssi {
+	__u8     status;
+	__le16   conn_handle;
+	__s8     rssi_dbm;
+} __packed;
+#endif
+
 #define HCI_OP_LE_SET_DATA_LEN		0x2022
 struct hci_cp_le_set_data_len {
 	__le16	handle;
