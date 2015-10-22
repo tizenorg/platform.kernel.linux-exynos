@@ -141,6 +141,14 @@ struct mgmt_cp_set_manufacturer_data {
 } __packed;
 #define MGMT_SET_MANUFACTURER_DATA_SIZE		28
 
+#define MGMT_OP_LE_SET_SCAN_PARAMS		(TIZEN_OP_CODE_BASE + 0x0f)
+struct mgmt_cp_le_set_scan_params {
+	__u8	type;	/* le scan type */
+	__le16	interval;
+	__le16	window;
+} __packed;
+#define MGMT_LE_SET_SCAN_PARAMS_SIZE		5
+
 /* BEGIN TIZEN_Bluetooth :: name update changes */
 #define MGMT_EV_DEVICE_NAME_UPDATE		(TIZEN_EV_BASE + 0x01)
 struct mgmt_ev_device_name_update {
