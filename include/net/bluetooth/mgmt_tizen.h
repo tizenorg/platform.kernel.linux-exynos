@@ -107,6 +107,19 @@ struct mgmt_cc_rp_disable_rssi {
 	__s8    link_type;
 } __packed;
 /* END TIZEN_Bluetooth :: RSSI monitoring */
+
+#define MGMT_OP_START_LE_DISCOVERY		(TIZEN_OP_CODE_BASE + 0x0a)
+struct mgmt_cp_start_le_discovery {
+	    __u8 type;
+} __packed;
+#define MGMT_START_LE_DISCOVERY_SIZE		1
+
+#define MGMT_OP_STOP_LE_DISCOVERY		(TIZEN_OP_CODE_BASE + 0x0b)
+struct mgmt_cp_stop_le_discovery {
+	    __u8 type;
+} __packed;
+#define MGMT_STOP_LE_DISCOVERY_SIZE		1
+
 /* BEGIN TIZEN_Bluetooth :: name update changes */
 #define MGMT_EV_DEVICE_NAME_UPDATE		(TIZEN_EV_BASE + 0x01)
 struct mgmt_ev_device_name_update {

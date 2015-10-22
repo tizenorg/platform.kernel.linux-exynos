@@ -1228,7 +1228,11 @@ static void hci_cc_le_set_scan_enable(struct hci_dev *hdev,
 		 */
 		if (test_and_clear_bit(HCI_LE_SCAN_INTERRUPTED,
 				       &hdev->dev_flags))
+#ifndef CONFIG_TIZEN_WIP /* The below line is kernel bug. */
 			hci_discovery_set_state(hdev, DISCOVERY_STOPPED);
+#else
+			hci_le_discovery_set_state(hdev, DISCOVERY_STOPPED);
+#endif
 		else if (!test_bit(HCI_LE_ADV, &hdev->dev_flags) &&
 			 hdev->discovery.state == DISCOVERY_FINDING)
 			mgmt_reenable_advertising(hdev);

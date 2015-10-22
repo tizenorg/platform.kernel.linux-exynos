@@ -4798,6 +4798,258 @@ unlocked:
 
 	return err;
 }
+
+static int mgmt_start_le_discovery_failed(struct hci_dev *hdev, u8 status)
+{
+	struct pending_cmd *cmd;
+	u8 type;
+	int err;
+
+	hci_le_discovery_set_state(hdev, DISCOVERY_STOPPED);
+
+	cmd = mgmt_pending_find(MGMT_OP_START_LE_DISCOVERY, hdev);
+	if (!cmd)
+		return -ENOENT;
+
+	type = hdev->le_discovery.type;
+
+	err = cmd_complete(cmd->sk, hdev->id, cmd->opcode, mgmt_status(status),
+			   &type, sizeof(type));
+	mgmt_pending_remove(cmd);
+
+	return err;
+}
+
+static void start_le_discovery_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	unsigned long timeout = 0;
+
+	BT_DBG("status %d", status);
+
+	if (status) {
+		hci_dev_lock(hdev);
+		mgmt_start_le_discovery_failed(hdev, status);
+		hci_dev_unlock(hdev);
+		return;
+	}
+
+	hci_dev_lock(hdev);
+	hci_le_discovery_set_state(hdev, DISCOVERY_FINDING);
+	hci_dev_unlock(hdev);
+
+	switch (hdev->le_discovery.type) {
+	case DISCOV_TYPE_LE:
+/* BEGIN TIZEN_Bluetooth :: Keep going on LE Scan  */
+#if 0
+		timeout = msecs_to_jiffies(DISCOV_LE_TIMEOUT);
+#endif
+/* END TIZEN_Bluetooth */
+		break;
+
+	default:
+		BT_ERR("Invalid discovery type %d", hdev->le_discovery.type);
+	}
+
+	if (!timeout)
+		return;
+
+	queue_delayed_work(hdev->workqueue, &hdev->le_scan_disable, timeout);
+}
+
+static int start_le_discovery(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	struct mgmt_cp_start_le_discovery *cp = data;
+	struct pending_cmd *cmd;
+	struct hci_cp_le_set_scan_param param_cp;
+	struct hci_cp_le_set_scan_enable enable_cp;
+	struct hci_request req;
+	u8 status, own_addr_type;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	hci_dev_lock(hdev);
+
+	if (!hdev_is_powered(hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_START_LE_DISCOVERY,
+				 MGMT_STATUS_NOT_POWERED);
+		goto failed;
+	}
+
+	if (hdev->le_discovery.state != DISCOVERY_STOPPED) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_START_LE_DISCOVERY,
+				 MGMT_STATUS_BUSY);
+		goto failed;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_START_LE_DISCOVERY, hdev, NULL, 0);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto failed;
+	}
+
+	hdev->le_discovery.type = cp->type;
+
+	hci_req_init(&req, hdev);
+
+	switch (hdev->le_discovery.type) {
+	case DISCOV_TYPE_LE:
+		status = mgmt_le_support(hdev);
+		if (status) {
+			err = cmd_status(sk, hdev->id, MGMT_OP_START_LE_DISCOVERY,
+					 status);
+			mgmt_pending_remove(cmd);
+			goto failed;
+		}
+
+		/* If controller is scanning, it means the background scanning
+		 * is running. Thus, we should temporarily stop it in order to
+		 * set the discovery scanning parameters.
+		 */
+		if (test_bit(HCI_LE_SCAN, &hdev->dev_flags))
+			hci_req_add_le_scan_disable(&req);
+
+		memset(&param_cp, 0, sizeof(param_cp));
+
+		/* All active scans will be done with either a resolvable
+		 * private address (when privacy feature has been enabled)
+		 * or unresolvable private address.
+		 */
+		err = hci_update_random_address(&req, true, &own_addr_type);
+		if (err < 0) {
+			err = cmd_status(sk, hdev->id, MGMT_OP_START_LE_DISCOVERY,
+					 MGMT_STATUS_FAILED);
+			mgmt_pending_remove(cmd);
+			goto failed;
+		}
+
+		param_cp.type = hdev->le_scan_type;
+		param_cp.interval = cpu_to_le16(hdev->le_scan_interval);
+		param_cp.window = cpu_to_le16(hdev->le_scan_window);
+		param_cp.own_address_type = own_addr_type;
+		hci_req_add(&req, HCI_OP_LE_SET_SCAN_PARAM, sizeof(param_cp),
+			    &param_cp);
+
+		memset(&enable_cp, 0, sizeof(enable_cp));
+		enable_cp.enable = LE_SCAN_ENABLE;
+		enable_cp.filter_dup = LE_SCAN_FILTER_DUP_DISABLE;
+
+		hci_req_add(&req, HCI_OP_LE_SET_SCAN_ENABLE, sizeof(enable_cp),
+			    &enable_cp);
+		break;
+
+	default:
+		err = cmd_status(sk, hdev->id, MGMT_OP_START_LE_DISCOVERY,
+				 MGMT_STATUS_INVALID_PARAMS);
+		mgmt_pending_remove(cmd);
+		goto failed;
+	}
+
+	err = hci_req_run(&req, start_le_discovery_complete);
+	if (err < 0)
+		mgmt_pending_remove(cmd);
+	else
+		hci_le_discovery_set_state(hdev, DISCOVERY_STARTING);
+
+failed:
+	hci_dev_unlock(hdev);
+	return err;
+}
+
+static int mgmt_stop_le_discovery_failed(struct hci_dev *hdev, u8 status)
+{
+	struct pending_cmd *cmd;
+	int err;
+
+	cmd = mgmt_pending_find(MGMT_OP_STOP_LE_DISCOVERY, hdev);
+	if (!cmd)
+		return -ENOENT;
+
+	err = cmd_complete(cmd->sk, hdev->id, cmd->opcode, mgmt_status(status),
+			   &hdev->le_discovery.type, sizeof(hdev->le_discovery.type));
+	mgmt_pending_remove(cmd);
+
+	return err;
+}
+
+static void stop_le_discovery_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	BT_DBG("status %d", status);
+
+	hci_dev_lock(hdev);
+
+	if (status) {
+		mgmt_stop_le_discovery_failed(hdev, status);
+		goto unlock;
+	}
+
+	hci_le_discovery_set_state(hdev, DISCOVERY_STOPPED);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int stop_le_discovery(struct sock *sk, struct hci_dev *hdev, void *data,
+			  u16 len)
+{
+	struct mgmt_cp_stop_le_discovery *mgmt_cp = data;
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	hci_dev_lock(hdev);
+
+	if (!hci_le_discovery_active(hdev)) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_STOP_LE_DISCOVERY,
+				   MGMT_STATUS_REJECTED, &mgmt_cp->type,
+				   sizeof(mgmt_cp->type));
+		goto unlock;
+	}
+
+	if (hdev->le_discovery.type != mgmt_cp->type) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_STOP_LE_DISCOVERY,
+				   MGMT_STATUS_INVALID_PARAMS, &mgmt_cp->type,
+				   sizeof(mgmt_cp->type));
+		goto unlock;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_STOP_LE_DISCOVERY, hdev, NULL, 0);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlock;
+	}
+
+	hci_req_init(&req, hdev);
+
+	switch (hdev->le_discovery.state) {
+	case DISCOVERY_FINDING:
+		cancel_delayed_work(&hdev->le_scan_disable);
+		hci_req_add_le_scan_disable(&req);
+		break;
+
+	default:
+		BT_DBG("unknown le discovery state %u", hdev->le_discovery.state);
+
+		mgmt_pending_remove(cmd);
+		err = cmd_complete(sk, hdev->id, MGMT_OP_STOP_LE_DISCOVERY,
+				   MGMT_STATUS_FAILED, &mgmt_cp->type,
+				   sizeof(mgmt_cp->type));
+		goto unlock;
+	}
+
+	err = hci_req_run(&req, stop_le_discovery_complete);
+	if (err < 0)
+		mgmt_pending_remove(cmd);
+	else
+		hci_le_discovery_set_state(hdev, DISCOVERY_STOPPING);
+
+unlock:
+	hci_dev_unlock(hdev);
+	return err;
+}
 #endif
 /* END TIZEN_Bluetooth */
 
@@ -7229,6 +7481,8 @@ static const struct mgmt_handler tizen_mgmt_handlers[] = {
 	{ set_enable_rssi,         false, MGMT_SET_RSSI_ENABLE_SIZE },
 	{ get_raw_rssi,            false, MGMT_GET_RAW_RSSI_SIZE },
 	{ set_disable_threshold,   false, MGMT_SET_RSSI_DISABLE_SIZE },
+	{ start_le_discovery,      false, MGMT_START_LE_DISCOVERY_SIZE },
+	{ stop_le_discovery,       false, MGMT_STOP_LE_DISCOVERY_SIZE },
 };
 #endif
 
@@ -8563,6 +8817,37 @@ void mgmt_discovering(struct hci_dev *hdev, u8 discovering)
 
 	mgmt_event(MGMT_EV_DISCOVERING, hdev, &ev, sizeof(ev), NULL);
 }
+
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Seperate LE discovery */
+void mgmt_le_discovering(struct hci_dev *hdev, u8 discovering)
+{
+	struct mgmt_ev_discovering ev;
+	struct pending_cmd *cmd;
+
+	BT_DBG("%s le discovering %u", hdev->name, discovering);
+
+	if (discovering)
+		cmd = mgmt_pending_find(MGMT_OP_START_LE_DISCOVERY, hdev);
+	else
+		cmd = mgmt_pending_find(MGMT_OP_STOP_LE_DISCOVERY, hdev);
+
+	if (cmd != NULL) {
+		u8 type = hdev->le_discovery.type;
+
+		cmd_complete(cmd->sk, hdev->id, cmd->opcode, 0, &type,
+			     sizeof(type));
+		mgmt_pending_remove(cmd);
+	}
+
+	memset(&ev, 0, sizeof(ev));
+	ev.type = hdev->le_discovery.type;
+	ev.discovering = discovering;
+
+	mgmt_event(MGMT_EV_DISCOVERING, hdev, &ev, sizeof(ev), NULL);
+}
+/* END TIZEN_Bluetooth */
+#endif
 
 static void adv_enable_complete(struct hci_dev *hdev, u8 status, u16 opcode)
 {

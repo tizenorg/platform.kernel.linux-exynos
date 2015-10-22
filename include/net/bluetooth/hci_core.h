@@ -327,6 +327,11 @@ struct hci_dev {
 	void			*smp_bredr_data;
 
 	struct discovery_state	discovery;
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Seperate LE discovery */
+	struct discovery_state	le_discovery;
+/* END TIZEN_Bluetooth */
+#endif
 	struct hci_conn_hash	conn_hash;
 
 	struct list_head	mgmt_pending;
@@ -553,6 +558,12 @@ bool hci_discovery_active(struct hci_dev *hdev);
 
 void hci_discovery_set_state(struct hci_dev *hdev, int state);
 
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Seperate LE discovery */
+bool hci_le_discovery_active(struct hci_dev *hdev);
+void hci_le_discovery_set_state(struct hci_dev *hdev, int state);
+/* END TIZEN_Bluetooth */
+#endif
 static inline int inquiry_cache_empty(struct hci_dev *hdev)
 {
 	return list_empty(&hdev->discovery.all);
@@ -1475,6 +1486,11 @@ void mgmt_remote_name(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 		      u8 addr_type, s8 rssi, u8 *name, u8 name_len);
 void mgmt_discovering(struct hci_dev *hdev, u8 discovering);
 bool mgmt_powering_down(struct hci_dev *hdev);
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Seperate LE discovery */
+void mgmt_le_discovering(struct hci_dev *hdev, u8 discovering);
+/* END TIZEN_Bluetooth */
+#endif
 void mgmt_new_ltk(struct hci_dev *hdev, struct smp_ltk *key, bool persistent);
 void mgmt_new_irk(struct hci_dev *hdev, struct smp_irk *irk);
 void mgmt_new_csrk(struct hci_dev *hdev, struct smp_csrk *csrk,
