@@ -4574,6 +4574,233 @@ static int set_scan_params(struct sock *sk, struct hci_dev *hdev,
 	return err;
 }
 
+#ifdef CONFIG_TIZEN_WIP /* Adv White List feature */
+static void add_white_list_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct mgmt_cp_add_dev_white_list *cp;
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_ADD_DEV_WHITE_LIST, hdev);
+	if (!cmd)
+		goto unlock;
+
+	cp = cmd->param;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_ADD_DEV_WHITE_LIST,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_ADD_DEV_WHITE_LIST, 0,
+			     cp, sizeof(*cp));
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int add_white_list(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct mgmt_cp_add_dev_white_list *cp = data;
+	struct hci_request req;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_ADD_DEV_WHITE_LIST,
+				  MGMT_STATUS_NOT_SUPPORTED);
+
+	if (!hdev_is_powered(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_ADD_DEV_WHITE_LIST,
+				  MGMT_STATUS_REJECTED);
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_ADD_DEV_WHITE_LIST, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_ADD_DEV_WHITE_LIST,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_ADD_DEV_WHITE_LIST, hdev, data, len);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	hci_req_add(&req, HCI_OP_LE_ADD_DEV_WHITE_LIST, sizeof(*cp), cp);
+
+	err = hci_req_run(&req, add_white_list_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		goto unlocked;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static void remove_from_white_list_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct mgmt_cp_remove_dev_from_white_list *cp;
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST, hdev);
+	if (!cmd)
+		goto unlock;
+
+	cp = cmd->param;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST, 0,
+			     cp, sizeof(*cp));
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int remove_from_white_list(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct mgmt_cp_remove_dev_from_white_list *cp = data;
+	struct hci_request req;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST,
+				  MGMT_STATUS_NOT_SUPPORTED);
+
+	if (!hdev_is_powered(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST,
+				  MGMT_STATUS_REJECTED);
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST, hdev, data, len);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	hci_req_add(&req, HCI_OP_LE_REMOVE_FROM_DEV_WHITE_LIST, sizeof(*cp), cp);
+
+	err = hci_req_run(&req, remove_from_white_list_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		goto unlocked;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+
+static void clear_white_list_complete(struct hci_dev *hdev, u8 status, u16 opcode)
+{
+	struct pending_cmd *cmd;
+
+	BT_DBG("status 0x%02x", status);
+
+	hci_dev_lock(hdev);
+
+	cmd = mgmt_pending_find(MGMT_OP_CLEAR_DEV_WHITE_LIST, hdev);
+	if (!cmd)
+		goto unlock;
+
+	if (status)
+		cmd_status(cmd->sk, hdev->id, MGMT_OP_CLEAR_DEV_WHITE_LIST,
+			   mgmt_status(status));
+	else
+		cmd_complete(cmd->sk, hdev->id, MGMT_OP_CLEAR_DEV_WHITE_LIST, 0,
+			     NULL, 0);
+
+	mgmt_pending_remove(cmd);
+
+unlock:
+	hci_dev_unlock(hdev);
+}
+
+static int clear_white_list(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	struct pending_cmd *cmd;
+	struct hci_request req;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	if (!lmp_le_capable(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_CLEAR_DEV_WHITE_LIST,
+				  MGMT_STATUS_NOT_SUPPORTED);
+
+	if (!hdev_is_powered(hdev))
+		return cmd_status(sk, hdev->id, MGMT_OP_CLEAR_DEV_WHITE_LIST,
+				  MGMT_STATUS_REJECTED);
+
+	hci_dev_lock(hdev);
+
+	if (mgmt_pending_find(MGMT_OP_CLEAR_DEV_WHITE_LIST, hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_CLEAR_DEV_WHITE_LIST,
+				MGMT_STATUS_BUSY);
+		goto unlocked;
+	}
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_CLEAR_DEV_WHITE_LIST, hdev, NULL, 0);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlocked;
+	}
+
+	hci_req_init(&req, hdev);
+
+	hci_req_add(&req, HCI_OP_LE_CLEAR_DEV_WHITE_LIST, 0, NULL);
+
+	err = hci_req_run(&req, clear_white_list_complete);
+	if (err < 0) {
+		mgmt_pending_remove(cmd);
+		goto unlocked;
+	}
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+#endif
+/* END TIZEN_Bluetooth */
+
 static void fast_connectable_complete(struct hci_dev *hdev, u8 status,
 				      u16 opcode)
 {
@@ -6401,6 +6628,9 @@ static const struct mgmt_handler tizen_mgmt_handlers[] = {
 	{ set_advertising_params,  false, MGMT_SET_ADVERTISING_PARAMS_SIZE },
 	{ set_advertising_data,    true, MGMT_SET_ADV_MIN_APP_DATA_SIZE },
 	{ set_scan_rsp_data,       true, MGMT_SET_SCAN_RSP_MIN_APP_DATA_SIZE },
+	{ add_white_list,          false, MGMT_ADD_DEV_WHITE_LIST_SIZE },
+	{ remove_from_white_list,  false, MGMT_REMOVE_DEV_FROM_WHITE_LIST_SIZE },
+	{ clear_white_list,        false, MGMT_OP_CLEAR_DEV_WHITE_LIST_SIZE },
 };
 #endif
 

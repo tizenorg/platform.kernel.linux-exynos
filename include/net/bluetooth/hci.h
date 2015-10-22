@@ -1300,6 +1300,22 @@ struct hci_cp_le_set_scan_param {
 	__u8    filter_policy;
 } __packed;
 
+#ifdef CONFIG_TIZEN_WIP
+#define HCI_OP_LE_CLEAR_DEV_WHITE_LIST	0x2010
+
+#define HCI_OP_LE_ADD_DEV_WHITE_LIST	0x2011
+struct hci_cp_le_add_dev_white_list {
+	__u8 bdaddr_type;
+	bdaddr_t bdaddr;
+} __packed;
+
+#define HCI_OP_LE_REMOVE_FROM_DEV_WHITE_LIST	0x2012
+struct hci_cp_le_remove_dev_from_white_list {
+	__u8 bdaddr_type;
+	bdaddr_t bdaddr;
+} __packed;
+#endif
+
 #define LE_SCAN_DISABLE			0x00
 #define LE_SCAN_ENABLE			0x01
 #define LE_SCAN_FILTER_DUP_DISABLE	0x00
