@@ -355,7 +355,12 @@ static void hci_conn_timeout(struct work_struct *work)
 		if (conn->out) {
 			if (conn->type == ACL_LINK)
 				hci_acl_create_connection_cancel(conn);
+#ifdef CONFIG_TIZEN_WIP
+			else if (conn->type == LE_LINK &&
+					bacmp(&conn->dst, BDADDR_ANY))
+#else
 			else if (conn->type == LE_LINK)
+#endif
 				hci_le_create_connection_cancel(conn);
 		} else if (conn->type == SCO_LINK || conn->type == ESCO_LINK) {
 			hci_reject_sco(conn);
