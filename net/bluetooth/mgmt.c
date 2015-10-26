@@ -1799,7 +1799,9 @@ failed:
 static void write_fast_connectable(struct hci_request *req, bool enable)
 {
 	struct hci_dev *hdev = req->hdev;
+#ifndef CONFIG_TIZEN_WIP
 	struct hci_cp_write_page_scan_activity acp;
+#endif
 	u8 type;
 
 	if (!test_bit(HCI_BREDR_ENABLED, &hdev->dev_flags))
@@ -1808,6 +1810,13 @@ static void write_fast_connectable(struct hci_request *req, bool enable)
 	if (hdev->hci_ver < BLUETOOTH_VER_1_2)
 		return;
 
+#ifdef CONFIG_TIZEN_WIP
+	if (enable) {
+		type = PAGE_SCAN_TYPE_INTERLACED;
+	} else {
+		type = PAGE_SCAN_TYPE_STANDARD;
+	}
+#else
 	if (enable) {
 		type = PAGE_SCAN_TYPE_INTERLACED;
 
@@ -1826,6 +1835,7 @@ static void write_fast_connectable(struct hci_request *req, bool enable)
 	    __cpu_to_le16(hdev->page_scan_window) != acp.window)
 		hci_req_add(req, HCI_OP_WRITE_PAGE_SCAN_ACTIVITY,
 			    sizeof(acp), &acp);
+#endif
 
 	if (hdev->page_scan_type != type)
 		hci_req_add(req, HCI_OP_WRITE_PAGE_SCAN_TYPE, 1, &type);
@@ -1988,6 +1998,10 @@ static int set_connectable(struct sock *sk, struct hci_dev *hdev, void *data,
 	}
 
 no_scan_update:
+#ifdef CONFIG_TIZEN_WIP
+	if (cp->val || test_bit(HCI_FAST_CONNECTABLE, &hdev->dev_flags))
+		write_fast_connectable(&req, true);
+#else
 	/* If we're going from non-connectable to connectable or
 	 * vice-versa when fast connectable is enabled ensure that fast
 	 * connectable gets disabled. write_fast_connectable won't do
@@ -1996,6 +2010,7 @@ no_scan_update:
 	 */
 	if (cp->val || test_bit(HCI_FAST_CONNECTABLE, &hdev->dev_flags))
 		write_fast_connectable(&req, false);
+#endif
 
 	/* Update the advertising parameters if necessary */
 	if (test_bit(HCI_ADVERTISING, &hdev->dev_flags))
