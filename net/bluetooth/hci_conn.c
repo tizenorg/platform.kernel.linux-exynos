@@ -1175,9 +1175,17 @@ void hci_conn_enter_active_mode(struct hci_conn *conn, __u8 force_active)
 	}
 
 timer:
+#ifdef CONFIG_TIZEN_WIP /* Sniff timer cancel */
+	if (hdev->idle_timeout > 0) {
+		cancel_delayed_work(&conn->idle_work);
+		queue_delayed_work(hdev->workqueue, &conn->idle_work,
+				   msecs_to_jiffies(hdev->idle_timeout));
+	}
+#else
 	if (hdev->idle_timeout > 0)
 		queue_delayed_work(hdev->workqueue, &conn->idle_work,
 				   msecs_to_jiffies(hdev->idle_timeout));
+#endif /* Sniff timer cancel */
 }
 
 /* Drop all connection on the device */
