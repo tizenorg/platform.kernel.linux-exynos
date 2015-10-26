@@ -3170,6 +3170,12 @@ static void hci_hardware_error_evt(struct hci_dev *hdev, struct sk_buff *skb)
 {
 	struct hci_ev_hardware_error *ev = (void *) skb->data;
 
+#ifdef CONFIG_TIZEN_WIP
+	hci_dev_lock(hdev);
+	mgmt_hardware_error(hdev, ev->code);
+	hci_dev_unlock(hdev);
+#endif
+
 	hdev->hw_error_code = ev->code;
 
 	queue_work(hdev->req_workqueue, &hdev->error_reset);

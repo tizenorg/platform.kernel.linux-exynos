@@ -8577,6 +8577,16 @@ void mgmt_connect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 	mgmt_event(MGMT_EV_CONNECT_FAILED, hdev, &ev, sizeof(ev), NULL);
 }
 
+#ifdef CONFIG_TIZEN_WIP
+void mgmt_hardware_error(struct hci_dev *hdev, u8 err_code)
+{
+	struct mgmt_ev_hardware_error ev;
+
+	ev.error_code = err_code;
+	mgmt_event(MGMT_EV_HARDWARE_ERROR, hdev, &ev, sizeof(ev), NULL);
+}
+#endif
+
 void mgmt_pin_code_request(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 secure)
 {
 	struct mgmt_ev_pin_code_request ev;
