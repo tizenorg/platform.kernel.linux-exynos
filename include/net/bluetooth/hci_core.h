@@ -1540,6 +1540,8 @@ int mgmt_set_rssi_threshold(struct sock *sk, struct hci_dev *hdev,
 void mgmt_rssi_alert_evt(struct hci_dev *hdev, struct sk_buff *skb);
 void mgmt_raw_rssi_response(struct hci_dev *hdev,
 		struct hci_cc_rp_get_raw_rssi *rp, int success);
+void mgmt_multi_adv_state_change_evt(struct hci_dev *hdev,
+		struct sk_buff *skb);
 void mgmt_enable_rssi_cc(struct hci_dev *hdev, void *response, u8 status);
 int mgmt_le_conn_updated(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 type,
 		u8 dst_type, u16 conn_interval, u16 conn_latency,

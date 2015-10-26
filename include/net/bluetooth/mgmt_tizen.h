@@ -233,4 +233,12 @@ struct mgmt_ev_le_device_found {
 	__le16	eir_len;
 	__u8	eir[0];
 } __packed;
+
+#define MGMT_EV_MULTI_ADV_STATE_CHANGED			(TIZEN_EV_BASE + 0x0b)
+struct mgmt_ev_vendor_specific_multi_adv_state_changed {
+	__u8	adv_instance;
+	__u8	state_change_reason;
+	__le16	connection_handle;
+} __packed;
+
 #endif   /* CONFIG_TIZEN_WIP */

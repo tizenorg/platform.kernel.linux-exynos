@@ -6769,6 +6769,21 @@ void mgmt_rssi_alert_evt(struct hci_dev *hdev, struct sk_buff *skb)
 			sizeof(struct mgmt_ev_vendor_specific_rssi_alert), NULL);
 }
 
+void mgmt_multi_adv_state_change_evt(struct hci_dev *hdev, struct sk_buff *skb)
+{
+	struct hci_ev_vendor_specific_multi_adv_state *ev = (void *) skb->data;
+	struct mgmt_ev_vendor_specific_multi_adv_state_changed mgmt_ev;
+
+	BT_DBG("Multi adv state changed [%2.2X %2.2X %2.2X]",
+			ev->adv_instance, ev->state_change_reason, ev->connection_handle);
+
+	mgmt_ev.adv_instance = ev->adv_instance;
+	mgmt_ev.state_change_reason = ev->state_change_reason;
+	mgmt_ev.connection_handle = ev->connection_handle;
+
+	mgmt_event(MGMT_EV_MULTI_ADV_STATE_CHANGED, hdev, &mgmt_ev,
+			sizeof(struct mgmt_ev_vendor_specific_multi_adv_state_changed), NULL);
+}
 /* END TIZEN_Bluetooth */
 #endif
 

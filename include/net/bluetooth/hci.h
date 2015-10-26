@@ -1911,6 +1911,15 @@ struct hci_ev_sync_train_complete {
 
 #define HCI_EV_SLAVE_PAGE_RESP_TIMEOUT	0x54
 
+#ifdef CONFIG_TIZEN_WIP
+#define LE_MULTI_ADV_STATE_CHANGE_SUB_EVENT 0x55
+struct hci_ev_vendor_specific_multi_adv_state {
+	__u8     adv_instance;
+	__u8     state_change_reason;
+	__le16     connection_handle;
+} __packed;
+#endif
+
 #define HCI_EV_LE_CONN_COMPLETE		0x01
 struct hci_ev_le_conn_complete {
 	__u8     status;
