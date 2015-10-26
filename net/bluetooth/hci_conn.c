@@ -687,7 +687,15 @@ static void hci_req_add_le_create_conn(struct hci_request *req,
 
 	cp.scan_interval = cpu_to_le16(hdev->le_scan_interval);
 	cp.scan_window = cpu_to_le16(hdev->le_scan_window);
+#ifdef CONFIG_TIZEN_WIP
+/* LE auto connect */
+	if (!bacmp(&conn->dst, BDADDR_ANY))
+		cp.filter_policy = 0x1;
+	else
+		bacpy(&cp.peer_addr, &conn->dst);
+#else
 	bacpy(&cp.peer_addr, &conn->dst);
+#endif
 	cp.peer_addr_type = conn->dst_type;
 	cp.own_address_type = own_addr_type;
 	cp.conn_interval_min = cpu_to_le16(conn->le_conn_min_interval);
