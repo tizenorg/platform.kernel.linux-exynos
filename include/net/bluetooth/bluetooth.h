@@ -176,6 +176,11 @@ typedef struct {
 	__u8 b[6];
 } __packed bdaddr_t;
 
+#ifdef CONFIG_TIZEN_WIP
+/* automatically enable sniff mode for connection */
+/* in case of normal phone this timeout would be 5 seconds */
+#define TIZEN_SNIFF_TIMEOUT	5	/*5 second*/
+#endif
 /* BD Address type */
 #define BDADDR_BREDR		0x00
 #define BDADDR_LE_PUBLIC	0x01

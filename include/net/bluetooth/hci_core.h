@@ -597,6 +597,10 @@ u32 hci_inquiry_cache_update(struct hci_dev *hdev, struct inquiry_data *data,
 void hci_inquiry_cache_flush(struct hci_dev *hdev);
 
 /* ----- HCI Connections ----- */
+#ifdef CONFIG_TIZEN_WIP
+#define LINK_SUPERVISION_TIMEOUT   0x1F40   /* n * 0.625 = 5 seconds */
+#endif
+
 enum {
 	HCI_CONN_AUTH_PEND,
 	HCI_CONN_REAUTH_PEND,
@@ -902,6 +906,9 @@ int hci_conn_check_secure(struct hci_conn *conn, __u8 sec_level);
 int hci_conn_security(struct hci_conn *conn, __u8 sec_level, __u8 auth_type,
 		      bool initiator);
 int hci_conn_switch_role(struct hci_conn *conn, __u8 role);
+#ifdef CONFIG_TIZEN_WIP
+int hci_conn_change_supervision_timeout(struct hci_conn *conn, __u16 timeout);
+#endif
 
 void hci_conn_enter_active_mode(struct hci_conn *conn, __u8 force_active);
 
@@ -1034,6 +1041,9 @@ int hci_dev_cmd(unsigned int cmd, void __user *arg);
 int hci_get_dev_list(void __user *arg);
 int hci_get_dev_info(void __user *arg);
 int hci_get_conn_list(void __user *arg);
+#ifdef CONFIG_TIZEN_WIP
+u32 get_link_mode(struct hci_conn *conn);
+#endif
 int hci_get_conn_info(struct hci_dev *hdev, void __user *arg);
 int hci_get_auth_info(struct hci_dev *hdev, void __user *arg);
 int hci_inquiry(void __user *arg);

@@ -2287,6 +2287,12 @@ static void hci_conn_complete_evt(struct hci_dev *hdev, struct sk_buff *skb)
 			hci_send_cmd(hdev, HCI_OP_CHANGE_CONN_PTYPE, sizeof(cp),
 				     &cp);
 		}
+
+#ifdef CONFIG_TIZEN_WIP
+		if ((get_link_mode(conn)) & HCI_LM_MASTER)
+			hci_conn_change_supervision_timeout(conn,
+						LINK_SUPERVISION_TIMEOUT);
+#endif
 	} else {
 		conn->state = BT_CLOSED;
 		if (conn->type == ACL_LINK)
@@ -3200,6 +3206,12 @@ static void hci_role_change_evt(struct hci_dev *hdev, struct sk_buff *skb)
 		clear_bit(HCI_CONN_RSWITCH_PEND, &conn->flags);
 
 		hci_role_switch_cfm(conn, ev->status, ev->role);
+
+#ifdef CONFIG_TIZEN_WIP
+		if (!ev->status && (get_link_mode(conn)) & HCI_LM_MASTER)
+			hci_conn_change_supervision_timeout(conn,
+						LINK_SUPERVISION_TIMEOUT);
+#endif
 	}
 
 	hci_dev_unlock(hdev);

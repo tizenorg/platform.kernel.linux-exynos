@@ -3064,6 +3064,12 @@ struct hci_dev *hci_alloc_dev(void)
 	hdev->le_adv_max_interval = 0x0800;
 
 #ifdef CONFIG_TIZEN_WIP
+	hdev->sniff_max_interval = 800;
+	hdev->sniff_min_interval = 400;
+
+	/* automatically enable sniff mode for connection */
+	hdev->idle_timeout = TIZEN_SNIFF_TIMEOUT * 1000; /* 2 Second */
+
 	hdev->adv_filter_policy = 0x00;
 	hdev->adv_type = 0x00;
 #endif
