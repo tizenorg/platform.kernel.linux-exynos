@@ -2546,6 +2546,16 @@ void hci_remove_irk(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 addr_type)
 	}
 }
 
+#ifdef CONFIG_TIZEN_WIP
+/* Timeout Error Event is being handled */
+static void hci_tx_timeout_error_evt(struct hci_dev *hdev)
+{
+	BT_ERR("%s H/W TX Timeout error", hdev->name);
+
+	mgmt_tx_timeout_error(hdev);
+}
+#endif
+
 /* HCI command timer function */
 static void hci_cmd_timeout(struct work_struct *work)
 {
@@ -2561,6 +2571,9 @@ static void hci_cmd_timeout(struct work_struct *work)
 		BT_ERR("%s command tx timeout", hdev->name);
 	}
 
+#ifdef CONFIG_TIZEN_WIP
+	hci_tx_timeout_error_evt(hdev);
+#endif
 	atomic_set(&hdev->cmd_cnt, 1);
 	queue_work(hdev->workqueue, &hdev->cmd_work);
 }

@@ -181,8 +181,13 @@ struct mgmt_ev_hardware_error {
 	__u8	error_code;
 } __packed;
 /* END TIZEN_Bluetooth */
+
+/* BEGIN TIZEN_Bluetooth :: HCI TX Timeout Error   */
+#define MGMT_EV_TX_TIMEOUT_ERROR		(TIZEN_EV_BASE + 0x03)
+/* END TIZEN_Bluetooth */
+
 /* BEGIN TIZEN_Bluetooth :: Add handling of RSSI Events   */
-#define MGMT_EV_RSSI_ALERT			(TIZEN_EV_BASE + 0x03)
+#define MGMT_EV_RSSI_ALERT			(TIZEN_EV_BASE + 0x04)
 struct mgmt_ev_vendor_specific_rssi_alert {
 	bdaddr_t bdaddr;
 	__s8     link_type;
@@ -190,7 +195,7 @@ struct mgmt_ev_vendor_specific_rssi_alert {
 	__s8     rssi_dbm;
 } __packed;
 
-#define MGMT_EV_RAW_RSSI			(TIZEN_EV_BASE + 0x04)
+#define MGMT_EV_RAW_RSSI			(TIZEN_EV_BASE + 0x05)
 struct mgmt_cc_rp_get_raw_rssi {
 	__u8     status;
 	__s8     rssi_dbm;
@@ -198,13 +203,13 @@ struct mgmt_cc_rp_get_raw_rssi {
 	bdaddr_t bt_address;
 } __packed;
 
-#define MGMT_EV_RSSI_ENABLED			(TIZEN_EV_BASE + 0x05)
+#define MGMT_EV_RSSI_ENABLED			(TIZEN_EV_BASE + 0x06)
 
-#define MGMT_EV_RSSI_DISABLED			(TIZEN_EV_BASE + 0x06)
+#define MGMT_EV_RSSI_DISABLED			(TIZEN_EV_BASE + 0x07)
 /* END TIZEN_Bluetooth :: Handling of RSSI Events */
 
 /* BEGIN TIZEN_Bluetooth :: Add LE connection update Events   */
-#define MGMT_EV_CONN_UPDATED			(TIZEN_EV_BASE + 0x07)
+#define MGMT_EV_CONN_UPDATED			(TIZEN_EV_BASE + 0x08)
 struct mgmt_ev_conn_updated {
 	struct	mgmt_addr_info addr;
 	__le16	conn_interval;
@@ -212,7 +217,7 @@ struct mgmt_ev_conn_updated {
 	__le16	supervision_timeout;
 } __packed;
 
-#define MGMT_EV_CONN_UPDATE_FAILED		(TIZEN_EV_BASE + 0x08)
+#define MGMT_EV_CONN_UPDATE_FAILED		(TIZEN_EV_BASE + 0x09)
 struct mgmt_ev_conn_update_failed {
 	struct	mgmt_addr_info addr;
 	__u8	status;

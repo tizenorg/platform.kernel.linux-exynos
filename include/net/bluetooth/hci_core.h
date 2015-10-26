@@ -1525,6 +1525,7 @@ void mgmt_reenable_advertising(struct hci_dev *hdev);
 void mgmt_smp_complete(struct hci_conn *conn, bool complete);
 #ifdef CONFIG_TIZEN_WIP
 void mgmt_hardware_error(struct hci_dev *hdev, u8 err_code);
+void mgmt_tx_timeout_error(struct hci_dev *hdev);
 void mgmt_rssi_enable_success(struct sock *sk, struct hci_dev *hdev,
 		void *data, struct hci_cc_rsp_enable_rssi *rp, int success);
 void mgmt_rssi_disable_success(struct sock *sk, struct hci_dev *hdev,

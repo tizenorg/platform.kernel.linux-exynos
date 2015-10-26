@@ -8585,6 +8585,11 @@ void mgmt_hardware_error(struct hci_dev *hdev, u8 err_code)
 	ev.error_code = err_code;
 	mgmt_event(MGMT_EV_HARDWARE_ERROR, hdev, &ev, sizeof(ev), NULL);
 }
+
+void mgmt_tx_timeout_error(struct hci_dev *hdev)
+{
+	mgmt_event(MGMT_EV_TX_TIMEOUT_ERROR, hdev, NULL, 0, NULL);
+}
 #endif
 
 void mgmt_pin_code_request(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 secure)
