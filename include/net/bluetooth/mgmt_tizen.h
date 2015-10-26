@@ -224,4 +224,13 @@ struct mgmt_ev_conn_update_failed {
 } __packed;
 /* END TIZEN_Bluetooth :: Add LE connection update Events */
 
+#define MGMT_EV_LE_DEVICE_FOUND			(TIZEN_EV_BASE + 0x0a)
+struct mgmt_ev_le_device_found {
+	struct mgmt_addr_info addr;
+	__s8	rssi;
+	__le32	flags;
+	__s8	adv_type;
+	__le16	eir_len;
+	__u8	eir[0];
+} __packed;
 #endif   /* CONFIG_TIZEN_WIP */

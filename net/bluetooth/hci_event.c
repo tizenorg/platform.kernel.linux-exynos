@@ -1159,6 +1159,7 @@ static void clear_pending_adv_report(struct hci_dev *hdev)
 	d->last_adv_data_len = 0;
 }
 
+#ifndef CONFIG_TIZEN_WIP
 static void store_pending_adv_report(struct hci_dev *hdev, bdaddr_t *bdaddr,
 				     u8 bdaddr_type, s8 rssi, u32 flags,
 				     u8 *data, u8 len)
@@ -1172,6 +1173,7 @@ static void store_pending_adv_report(struct hci_dev *hdev, bdaddr_t *bdaddr,
 	memcpy(d->last_adv_data, data, len);
 	d->last_adv_data_len = len;
 }
+#endif
 
 static void hci_cc_le_set_scan_enable(struct hci_dev *hdev,
 				      struct sk_buff *skb)
@@ -4693,10 +4695,14 @@ static void process_adv_report(struct hci_dev *hdev, u8 type, bdaddr_t *bdaddr,
 			       u8 bdaddr_type, bdaddr_t *direct_addr,
 			       u8 direct_addr_type, s8 rssi, u8 *data, u8 len)
 {
+#ifndef CONFIG_TIZEN_WIP
 	struct discovery_state *d = &hdev->discovery;
+#endif
 	struct smp_irk *irk;
 	struct hci_conn *conn;
+#ifndef CONFIG_TIZEN_WIP /* TIZEN_Bluetooth :: Disable adv ind and scan rsp merging */
 	bool match;
+#endif
 	u32 flags;
 
 	/* If the direct address is present, then this report is from
@@ -4750,16 +4756,24 @@ static void process_adv_report(struct hci_dev *hdev, u8 type, bdaddr_t *bdaddr,
 		if (type == LE_ADV_DIRECT_IND)
 			return;
 
+#ifndef CONFIG_TIZEN_WIP /* TIZEN_Bluetooth :: Handle all adv packet in platform */
 		if (!hci_pend_le_action_lookup(&hdev->pend_le_reports,
 					       bdaddr, bdaddr_type))
 			return;
+#endif
 
 		if (type == LE_ADV_NONCONN_IND || type == LE_ADV_SCAN_IND)
 			flags = MGMT_DEV_FOUND_NOT_CONNECTABLE;
 		else
 			flags = 0;
+
+#ifdef CONFIG_TIZEN_WIP
+		mgmt_le_device_found(hdev, bdaddr, LE_LINK, bdaddr_type, NULL,
+				  rssi, flags, data, len, NULL, 0, type);
+#else
 		mgmt_device_found(hdev, bdaddr, LE_LINK, bdaddr_type, NULL,
 				  rssi, flags, data, len, NULL, 0);
+#endif
 		return;
 	}
 
@@ -4784,6 +4798,10 @@ static void process_adv_report(struct hci_dev *hdev, u8 type, bdaddr_t *bdaddr,
 	else
 		flags = 0;
 
+#ifdef CONFIG_TIZEN_WIP /* TIZEN_Bluetooth :: Disable adv ind and scan rsp merging */
+	mgmt_le_device_found(hdev, bdaddr, LE_LINK, bdaddr_type, NULL,
+		  rssi, flags, data, len, NULL, 0, type);
+#else
 	/* If there's nothing pending either store the data from this
 	 * event or send an immediate device found event if the data
 	 * should not be stored for later.
@@ -4846,6 +4864,7 @@ static void process_adv_report(struct hci_dev *hdev, u8 type, bdaddr_t *bdaddr,
 			  d->last_adv_addr_type, NULL, rssi, d->last_adv_flags,
 			  d->last_adv_data, d->last_adv_data_len, data, len);
 	clear_pending_adv_report(hdev);
+#endif
 }
 
 static void hci_le_adv_report_evt(struct hci_dev *hdev, struct sk_buff *skb)
