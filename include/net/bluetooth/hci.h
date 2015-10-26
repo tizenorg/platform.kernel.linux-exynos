@@ -1912,6 +1912,23 @@ struct hci_ev_sync_train_complete {
 #define HCI_EV_SLAVE_PAGE_RESP_TIMEOUT	0x54
 
 #ifdef CONFIG_TIZEN_WIP
+/** Vendor Specific HCI Event
+ * Vendor: Broadcom
+ * Purpose: This HCI Event gives RSSI Alerts for monitored LE Link
+ **/
+#define HCI_EV_VENDOR_SPECIFIC		0xFF
+
+struct hci_ev_vendor_specific {
+	__u8     event_sub_code;
+} __packed;
+
+struct hci_ev_ext_vendor_specific {
+	__u8     event_le_ext_sub_code;
+} __packed;
+
+#define LE_META_VENDOR_SPECIFIC_GROUP_EVENT 0xE9
+#define LE_RSSI_LINK_ALERT 0x02
+
 #define LE_MULTI_ADV_STATE_CHANGE_SUB_EVENT 0x55
 struct hci_ev_vendor_specific_multi_adv_state {
 	__u8     adv_instance;
