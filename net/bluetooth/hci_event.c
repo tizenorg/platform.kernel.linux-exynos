@@ -4622,6 +4622,10 @@ static void hci_le_conn_complete_evt(struct hci_dev *hdev, struct sk_buff *skb)
 			}
 		}
 	} else {
+#ifdef CONFIG_TIZEN_WIP
+		/* LE auto connect */
+		bacpy(&conn->dst, &ev->bdaddr);
+#endif
 		cancel_delayed_work(&conn->le_conn_timeout);
 	}
 
