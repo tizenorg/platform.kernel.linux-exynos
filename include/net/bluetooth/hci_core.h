@@ -958,6 +958,12 @@ static inline void hci_conn_drop(struct hci_conn *conn)
 {
 	BT_DBG("hcon %p orig refcnt %d", conn, atomic_read(&conn->refcnt));
 
+#ifdef CONFIG_TIZEN_WIP
+	if (!atomic_read(&conn->refcnt)) {
+		BT_ERR("conn->refcnt is zero");
+		return;
+	}
+#endif
 	if (atomic_dec_and_test(&conn->refcnt)) {
 		unsigned long timeo;
 
@@ -1417,6 +1423,10 @@ static inline int hci_check_conn_params(u16 min, u16 max, u16 latency,
 int hci_register_cb(struct hci_cb *hcb);
 int hci_unregister_cb(struct hci_cb *hcb);
 
+#ifdef CONFIG_TIZEN_WIP
+int hci_register_notifier(struct notifier_block *nb);
+int hci_unregister_notifier(struct notifier_block *nb);
+#endif
 bool hci_req_pending(struct hci_dev *hdev);
 
 struct sk_buff *__hci_cmd_sync(struct hci_dev *hdev, u16 opcode, u32 plen,

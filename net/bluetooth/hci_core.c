@@ -56,6 +56,23 @@ DEFINE_RWLOCK(hci_cb_list_lock);
 /* HCI ID Numbering */
 static DEFINE_IDA(hci_index_ida);
 
+
+/* ---- HCI notifications ---- */
+
+#ifdef CONFIG_TIZEN_WIP
+static ATOMIC_NOTIFIER_HEAD(hci_notifier);
+
+int hci_register_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&hci_notifier, nb);
+}
+
+int hci_unregister_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&hci_notifier, nb);
+}
+#endif
+
 /* ----- HCI requests ----- */
 
 #define HCI_REQ_DONE	  0
@@ -70,6 +87,11 @@ static DEFINE_IDA(hci_index_ida);
 static void hci_notify(struct hci_dev *hdev, int event)
 {
 	hci_sock_dev_event(hdev, event);
+#ifdef CONFIG_TIZEN_WIP
+	if (event == HCI_DEV_REG || event == HCI_DEV_UNREG
+			|| event == HCI_DEV_WRITE)
+		atomic_notifier_call_chain(&hci_notifier, event, hdev);
+#endif
 }
 
 /* ---- HCI debugfs entries ---- */
@@ -3557,6 +3579,10 @@ static void hci_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 
 	/* Get rid of skb owner, prior to sending to the driver. */
 	skb_orphan(skb);
+
+#ifdef CONFIG_TIZEN_WIP
+	hci_notify(hdev, HCI_DEV_WRITE);
+#endif
 
 	err = hdev->send(hdev, skb);
 	if (err < 0) {
