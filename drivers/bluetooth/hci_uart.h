@@ -27,6 +27,72 @@
 #define N_HCI	15
 #endif
 
+#ifdef CONFIG_RADIO_BCM4343S
+#include <linux/skbuff.h>
+
+/*******************************************************************************
+**  Constants
+*******************************************************************************/
+
+/*
+ * enum proto-type - The protocol on chips which share a
+ *	common physical interface like UART.
+ */
+enum proto_type {
+    PROTO_SH_BT,
+    PROTO_SH_FM,
+    PROTO_SH_GPS,
+    PROTO_SH_MAX,
+};
+
+#define sh_ldisc_cb(skb) ((struct sh_ldisc_skb_cb *)((skb)->cb))
+
+/*******************************************************************************
+**  Type definitions
+*******************************************************************************/
+
+/*
+ * Skb helpers
+ */
+struct sh_ldisc_skb_cb {
+    __u8 pkt_type;
+    __u32 lparam;
+};
+
+/**
+ * struct sh_proto_s - Per Protocol structure from BT/FM/GPS to shared ldisc
+ * @type: type of the protocol being registered among the
+ *	available proto_type(BT, FM, GPS the protocol which share TTY).
+ * @recv: the receiver callback pointing to a function in the
+ *	protocol drivers called by the shared ldisc driver upon receiving
+ *	relevant data.
+ * @match_packet: reserved for future use, to make ST more generic
+ * @reg_complete_cb: callback handler pointing to a function in protocol
+ *	handler called by shared ldisc when the pending registrations are complete.
+ *	The registrations are marked pending, in situations when fw
+ *	download is in progress.
+ * @write: pointer to function in shared ldisc provided to protocol drivers,
+ *	to be made use when protocol drivers have data to send to TTY.
+ * @priv_data: privdate data holder for the protocol drivers, sent
+ *	from the protocol drivers during registration, and sent back on
+ *	reg_complete_cb and recv.
+ */
+struct sh_proto_s {
+    enum proto_type type;
+    long (*recv) (void *, struct sk_buff *);
+    unsigned char (*match_packet) (const unsigned char *data);
+    void (*reg_complete_cb) (void *, char data);
+    long (*write) (struct sk_buff *skb);
+    void *priv_data;
+};
+
+/*******************************************************************************
+**  Extern variables and functions
+*******************************************************************************/
+
+extern long hci_ldisc_register(struct sh_proto_s *);
+extern long hci_ldisc_unregister(enum proto_type);
+#endif
 /* Ioctls */
 #define HCIUARTSETPROTO		_IOW('U', 200, int)
 #define HCIUARTGETPROTO		_IOR('U', 201, int)
@@ -77,7 +143,39 @@ struct hci_uart {
 	struct sk_buff		*tx_skb;
 	unsigned long		tx_state;
 	spinlock_t		rx_lock;
+#ifdef CONFIG_RADIO_BCM4343S
+   struct sh_proto_s *list[PROTO_SH_MAX];
+   unsigned char    protos_registered;
+   spinlock_t lock;
+#endif
+
 };
+#ifdef CONFIG_RADIO_BCM4343S
+/* BT driver's local status */
+#define BT_DRV_RUNNING        0
+#define BT_ST_REGISTERED      1
+
+/* BT driver operation structure */
+struct hci_st {
+
+    /* hci device pointer which binds to bt driver */
+    struct hci_dev *hdev;
+
+    /* used locally,to maintain various BT driver status */
+    unsigned long flags;
+
+    /* to hold ST registration callback  status */
+    char streg_cbdata;
+
+    /* write function pointer of ST driver */
+    long (*st_write) (struct sk_buff *);
+
+    /* Wait on comepletion handler needed to synchronize
+    * hci_st_open() and hci_st_registration_completion_cb()
+    * functions.*/
+    struct completion wait_for_btdrv_reg_completion;
+};
+#endif
 
 /* HCI_UART proto flag bits */
 #define HCI_UART_PROTO_SET	0
@@ -91,7 +189,12 @@ int hci_uart_register_proto(struct hci_uart_proto *p);
 int hci_uart_unregister_proto(struct hci_uart_proto *p);
 int hci_uart_tx_wakeup(struct hci_uart *hu);
 int hci_uart_init_ready(struct hci_uart *hu);
+#ifdef CONFIG_RADIO_BCM4343S
+void hci_uart_route_frame(enum proto_type protoid, struct hci_uart *hu, struct sk_buff *skb);
+long hci_ldisc_write(struct sk_buff *);
 
+
+#endif
 #ifdef CONFIG_BT_HCIUART_H4
 int h4_init(void);
 int h4_deinit(void);
