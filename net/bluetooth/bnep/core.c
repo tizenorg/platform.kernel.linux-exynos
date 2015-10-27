@@ -539,10 +539,16 @@ int bnep_add_connection(struct bnep_connadd_req *req, struct socket *sock)
 	baswap((void *) src, &l2cap_pi(sock->sk)->chan->src);
 
 	/* session struct allocated as private part of net_device */
+#ifdef CONFIG_TIZEN_WIP
+	dev = alloc_netdev(sizeof(struct bnep_session),
+				(*req->device) ? req->device : "bnep%d",
+				bnep_net_setup);
+#else
 	dev = alloc_netdev(sizeof(struct bnep_session),
 			   (*req->device) ? req->device : "bnep%d",
 			   NET_NAME_UNKNOWN,
 			   bnep_net_setup);
+#endif
 	if (!dev)
 		return -ENOMEM;
 
