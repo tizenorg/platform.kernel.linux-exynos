@@ -103,11 +103,19 @@ static struct rfcomm_session *rfcomm_session_del(struct rfcomm_session *s);
 #define __get_rpn_stop_bits(line) (((line) >> 2) & 0x1)
 #define __get_rpn_parity(line)    (((line) >> 3) & 0x7)
 
+#ifndef CONFIG_TIZEN_WIP
 static DECLARE_WAIT_QUEUE_HEAD(rfcomm_wq);
+#endif
 
 static void rfcomm_schedule(void)
 {
+#ifdef CONFIG_TIZEN_WIP
+	if (!rfcomm_thread)
+		return;
+	wake_up_process(rfcomm_thread);
+#else
 	wake_up_all(&rfcomm_wq);
+#endif
 }
 
 /* ---- RFCOMM FCS computation ---- */
@@ -188,11 +196,19 @@ static void rfcomm_l2state_change(struct sock *sk)
 	rfcomm_schedule();
 }
 
+#ifdef CONFIG_TIZEN_WIP
+static void rfcomm_l2data_ready(struct sock *sk, int bytes)
+{
+	BT_DBG("%p bytes %d", sk, bytes);
+	rfcomm_schedule();
+}
+#else
 static void rfcomm_l2data_ready(struct sock *sk)
 {
 	BT_DBG("%p", sk);
 	rfcomm_schedule();
 }
+#endif
 
 static int rfcomm_l2sock_create(struct socket **sock)
 {
@@ -2088,22 +2104,38 @@ static void rfcomm_kill_listener(void)
 
 static int rfcomm_run(void *unused)
 {
+#ifndef CONFIG_TIZEN_WIP
 	DEFINE_WAIT_FUNC(wait, woken_wake_function);
+#endif
 	BT_DBG("");
 
 	set_user_nice(current, -10);
 
 	rfcomm_add_listener(BDADDR_ANY);
+#ifdef CONFIG_TIZEN_WIP
+	while (1) {
+		set_current_state(TASK_INTERRUPTIBLE);
 
+		if (kthread_should_stop())
+			break;
+#else
 	add_wait_queue(&rfcomm_wq, &wait);
 	while (!kthread_should_stop()) {
+#endif
 
 		/* Process stuff */
 		rfcomm_process_sessions();
-
+#ifdef CONFIG_TIZEN_WIP
+		schedule();
+#else
 		wait_woken(&wait, TASK_INTERRUPTIBLE, MAX_SCHEDULE_TIMEOUT);
+#endif
 	}
+#ifdef CONFIG_TIZEN_WIP
+	__set_current_state(TASK_RUNNING);
+#else
 	remove_wait_queue(&rfcomm_wq, &wait);
+#endif
 
 	rfcomm_kill_listener();
 
