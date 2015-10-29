@@ -907,6 +907,11 @@ static inline void chan_ready_cb(struct l2cap_chan *chan)
 
 	add_peer_chan(chan, dev);
 	ifup(dev->netdev);
+
+#ifdef CONFIG_TIZEN_WIP
+	mgmt_6lowpan_conn_changed(dev->hdev, &chan->dst,
+				chan->dst_type, true);
+#endif
 }
 
 static inline struct l2cap_chan *chan_new_conn_cb(struct l2cap_chan *pchan)
@@ -964,7 +969,10 @@ static void chan_close_cb(struct l2cap_chan *chan)
 			       last ? "last " : "1 ", peer);
 			BT_DBG("chan %p orig refcnt %d", chan,
 			       atomic_read(&chan->kref.refcount));
-
+#ifdef CONFIG_TIZEN_WIP
+			mgmt_6lowpan_conn_changed(dev->hdev, &chan->dst,
+						chan->dst_type, false);
+#endif
 			l2cap_chan_put(chan);
 			break;
 		}
@@ -1045,6 +1053,9 @@ static const struct l2cap_ops bt_6lowpan_chan_ops = {
 	.suspend		= chan_suspend_cb,
 	.get_sndtimeo		= chan_get_sndtimeo_cb,
 	.alloc_skb		= chan_alloc_skb_cb,
+#ifdef CONFIG_TIZEN_WIP
+	.memcpy_fromiovec	= l2cap_chan_no_memcpy_fromiovec,
+#endif
 
 	.teardown		= l2cap_chan_no_teardown,
 	.defer			= l2cap_chan_no_defer,
@@ -1107,6 +1118,18 @@ static int bt_6lowpan_disconnect(struct l2cap_conn *conn, u8 dst_type)
 
 	return 0;
 }
+
+#ifdef CONFIG_TIZEN_WIP
+int _bt_6lowpan_connect(bdaddr_t *addr, u8 dst_type)
+{
+	return bt_6lowpan_connect(addr, dst_type);
+}
+
+int _bt_6lowpan_disconnect(struct l2cap_conn *conn, u8 dst_type)
+{
+	return bt_6lowpan_disconnect(conn, dst_type);
+}
+#endif
 
 static struct l2cap_chan *bt_6lowpan_listen(void)
 {
@@ -1404,7 +1427,7 @@ static void disconnect_devices(void)
 static int device_event(struct notifier_block *unused,
 			unsigned long event, void *ptr)
 {
-	struct net_device *netdev = netdev_notifier_info_to_dev(ptr);
+	struct net_device *netdev = ptr;
 	struct lowpan_dev *entry;
 
 	if (netdev->type != ARPHRD_6LOWPAN)
@@ -1432,6 +1455,40 @@ static int device_event(struct notifier_block *unused,
 static struct notifier_block bt_6lowpan_dev_notifier = {
 	.notifier_call = device_event,
 };
+
+#ifdef CONFIG_TIZEN_WIP
+void bt_6lowpan_enable(void)
+{
+	if (enable_6lowpan != true) {
+		disconnect_all_peers();
+
+		enable_6lowpan = true;
+
+		if (listen_chan) {
+			l2cap_chan_close(listen_chan, 0);
+			l2cap_chan_put(listen_chan);
+		}
+
+		listen_chan = bt_6lowpan_listen();
+
+		register_netdevice_notifier(&bt_6lowpan_dev_notifier);
+	}
+}
+
+void bt_6lowpan_disable(void)
+{
+	if (enable_6lowpan == true) {
+		if (listen_chan) {
+			l2cap_chan_close(listen_chan, 0);
+			l2cap_chan_put(listen_chan);
+			listen_chan = NULL;
+		}
+		disconnect_devices();
+		unregister_netdevice_notifier(&bt_6lowpan_dev_notifier);
+		enable_6lowpan = false;
+	}
+}
+#endif
 
 static int __init bt_6lowpan_init(void)
 {

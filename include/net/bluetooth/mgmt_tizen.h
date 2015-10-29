@@ -165,6 +165,23 @@ struct mgmt_rp_get_adv_tx_power {
 	__s8 adv_tx_power;
 } __packed;
 
+#define MGMT_OP_ENABLE_6LOWPAN		(TIZEN_OP_CODE_BASE + 0x12)
+#define MGMT_ENABLE_BT_6LOWPAN_SIZE			1
+struct mgmt_cp_enable_6lowpan {
+	__u8 enable_6lowpan;
+} __packed;
+
+#define MGMT_OP_CONNECT_6LOWPAN	(TIZEN_OP_CODE_BASE + 0x13)
+struct mgmt_cp_connect_6lowpan {
+	struct mgmt_addr_info addr;
+} __packed;
+#define MGMT_CONNECT_6LOWPAN_SIZE	7
+
+#define MGMT_OP_DISCONNECT_6LOWPAN	(TIZEN_OP_CODE_BASE + 0x14)
+struct mgmt_cp_disconnect_6lowpan {
+	struct mgmt_addr_info addr;
+} __packed;
+#define MGMT_DISCONNECT_6LOWPAN_SIZE	7
 
 /* BEGIN TIZEN_Bluetooth :: name update changes */
 #define MGMT_EV_DEVICE_NAME_UPDATE		(TIZEN_EV_BASE + 0x01)
@@ -239,6 +256,12 @@ struct mgmt_ev_vendor_specific_multi_adv_state_changed {
 	__u8	adv_instance;
 	__u8	state_change_reason;
 	__le16	connection_handle;
+} __packed;
+
+#define MGMT_EV_6LOWPAN_CONN_STATE_CHANGED		(TIZEN_EV_BASE + 0x0c)
+struct mgmt_ev_6lowpan_conn_state_changed {
+	struct	mgmt_addr_info addr;
+	__u8	connected;
 } __packed;
 
 #endif   /* CONFIG_TIZEN_WIP */
