@@ -368,4 +368,9 @@ void sco_exit(void);
 
 void bt_sock_reclassify_lock(struct sock *sk, int proto);
 
+#ifdef CONFIG_TIZEN_WIP
+void bt_6lowpan_enable(void);
+void bt_6lowpan_disable(void);
+#endif
+
 #endif /* __BLUETOOTH_H */

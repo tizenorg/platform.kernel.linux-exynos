@@ -5220,8 +5220,136 @@ done:
 	hci_dev_unlock(hdev);
 	return err;
 }
-/* END TIZEN_Bluetooth */
+
+static int connect_bt_6lowpan(struct sock *sk, struct hci_dev *hdev,
+			void *data, u16 len)
+{
+	struct mgmt_cp_connect_6lowpan *cp = data;
+	__u8 addr_type = ADDR_LE_DEV_PUBLIC;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	hci_dev_lock(hdev);
+
+	if (!lmp_le_capable(hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_CONNECT_6LOWPAN,
+				  MGMT_STATUS_NOT_SUPPORTED);
+		goto unlocked;
+	}
+
+	if (!hdev_is_powered(hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_CONNECT_6LOWPAN,
+				  MGMT_STATUS_REJECTED);
+		goto unlocked;
+	}
+
+	if (bdaddr_type_is_le(cp->addr.type)) {
+		if (cp->addr.type == BDADDR_LE_PUBLIC)
+			addr_type = ADDR_LE_DEV_PUBLIC;
+		else
+			addr_type = ADDR_LE_DEV_RANDOM;
+	} else {
+		 err = cmd_complete(sk, hdev->id, MGMT_OP_CONNECT_6LOWPAN,
+				  MGMT_STATUS_INVALID_PARAMS,
+				  NULL, 0);
+		goto unlocked;
+	}
+	hci_dev_unlock(hdev);
+
+        /* 6lowpan Connect */
+	err = _bt_6lowpan_connect(&cp->addr.bdaddr, cp->addr.type);
+
+	hci_dev_lock(hdev);
+
+	if (err < 0) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_CONNECT_6LOWPAN,
+				MGMT_STATUS_REJECTED, NULL, 0);
+
+		goto unlocked;
+	}
+	err = cmd_complete(sk, hdev->id, MGMT_OP_CONNECT_6LOWPAN, 0,
+				NULL, 0);
+
+unlocked:
+	hci_dev_unlock(hdev);
+	return err;
+}
+
+static int disconnect_bt_6lowpan(struct sock *sk, struct hci_dev *hdev,
+			void *data, u16 len)
+{
+	struct mgmt_cp_disconnect_6lowpan *cp = data;
+	struct hci_conn *conn = NULL;
+	__u8 addr_type = ADDR_LE_DEV_PUBLIC;
+	int err;
+
+	BT_DBG("%s", hdev->name);
+
+	hci_dev_lock(hdev);
+
+	if (!lmp_le_capable(hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_DISCONNECT_6LOWPAN,
+				  MGMT_STATUS_NOT_SUPPORTED);
+		goto unlocked;
+	}
+
+	if (!hdev_is_powered(hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_DISCONNECT_6LOWPAN,
+				  MGMT_STATUS_REJECTED);
+		goto unlocked;
+	}
+
+	if (bdaddr_type_is_le(cp->addr.type)) {
+		if (cp->addr.type == BDADDR_LE_PUBLIC)
+			addr_type = ADDR_LE_DEV_PUBLIC;
+		else
+			addr_type = ADDR_LE_DEV_RANDOM;
+	} else {
+		 err = cmd_complete(sk, hdev->id, MGMT_OP_DISCONNECT_6LOWPAN,
+				  MGMT_STATUS_INVALID_PARAMS,
+				  NULL, 0);
+		goto unlocked;
+	}
+
+	conn = hci_conn_hash_lookup_ba(hdev, LE_LINK, &cp->addr.bdaddr);
+	if (!conn) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_DISCONNECT_6LOWPAN,
+				  MGMT_STATUS_NOT_CONNECTED,
+				  NULL, 0);
+		goto unlocked;
+	}
+
+	if (conn->dst_type != addr_type) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_DISCONNECT_6LOWPAN,
+				  MGMT_STATUS_INVALID_PARAMS,
+				  NULL, 0);
+		goto unlocked;
+	}
+
+	if (conn->state != BT_CONNECTED) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_DISCONNECT_6LOWPAN,
+				  MGMT_STATUS_NOT_CONNECTED,
+				  NULL, 0);
+		goto unlocked;
+	}
+
+	/* 6lowpan Disconnect */
+	err = _bt_6lowpan_disconnect(conn->l2cap_data, cp->addr.type);
+	if (err < 0) {
+		err = cmd_complete(sk, hdev->id, MGMT_OP_DISCONNECT_6LOWPAN,
+				MGMT_STATUS_REJECTED, NULL, 0);
+		goto unlocked;
+	}
+	err = cmd_complete(sk, hdev->id, MGMT_OP_CONNECT_6LOWPAN, 0,
+				NULL, 0);
+
+unlocked:
+	hci_dev_unlock(hdev);
+	return err;
+}
 #endif
+/* END TIZEN_Bluetooth */
 
 static void fast_connectable_complete(struct hci_dev *hdev, u8 status,
 				      u16 opcode)
@@ -6193,6 +6321,44 @@ unlock:
 
 	return err;
 }
+
+#ifdef CONFIG_TIZEN_WIP
+static int enable_bt_6lowpan(struct sock *sk, struct hci_dev *hdev,
+			   void *data, u16 len)
+{
+	int err;
+	struct mgmt_cp_enable_6lowpan *cp = data;
+
+	BT_DBG("%s", hdev->name);
+
+	hci_dev_lock(hdev);
+
+	if (!hdev_is_powered(hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_ENABLE_6LOWPAN,
+				 MGMT_STATUS_NOT_POWERED);
+		goto unlocked;
+	}
+
+	if (!lmp_le_capable(hdev)) {
+		err = cmd_status(sk, hdev->id, MGMT_OP_ENABLE_6LOWPAN,
+				MGMT_STATUS_NOT_SUPPORTED);
+		goto unlocked;
+	}
+
+	if (cp->enable_6lowpan)
+		bt_6lowpan_enable();
+	else
+		bt_6lowpan_disable();
+
+	err = cmd_complete(sk, hdev->id, MGMT_OP_ENABLE_6LOWPAN,
+			MGMT_STATUS_SUCCESS, NULL, 0);
+
+unlocked:
+	hci_dev_unlock(hdev);
+
+	return err;
+}
+#endif
 
 /* BEGIN TIZEN_Bluetooth :: Apply RSSI changes   */
 static void set_rssi_threshold_complete(struct hci_dev *hdev, u8 status, u16 opcode)
@@ -7881,7 +8047,10 @@ static const struct mgmt_handler tizen_mgmt_handlers[] = {
 	{ set_manufacturer_data,   false, MGMT_SET_MANUFACTURER_DATA_SIZE},
 	{ le_set_scan_params,      false, MGMT_LE_SET_SCAN_PARAMS_SIZE },
 	{ set_voice_setting,       false, MGMT_SET_VOICE_SETTING_SIZE},
-	{ get_adv_tx_power,       false, MGMT_GET_ADV_TX_POWER_SIZE}
+	{ get_adv_tx_power,       false, MGMT_GET_ADV_TX_POWER_SIZE},
+	{ enable_bt_6lowpan,       false, MGMT_ENABLE_BT_6LOWPAN_SIZE},
+	{ connect_bt_6lowpan,      false, MGMT_CONNECT_6LOWPAN_SIZE},
+	{ disconnect_bt_6lowpan,   false, MGMT_DISCONNECT_6LOWPAN_SIZE}
 };
 #endif
 
@@ -9236,6 +9405,23 @@ void mgmt_le_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 	ev_size = sizeof(*ev) + eir_len + scan_rsp_len;
 
 	mgmt_event(MGMT_EV_LE_DEVICE_FOUND, hdev, ev, ev_size, NULL);
+}
+
+void mgmt_6lowpan_conn_changed(struct hci_dev *hdev, bdaddr_t *bdaddr,
+			   u8 addr_type, bool connected)
+{
+	char buf[512];
+	struct mgmt_ev_6lowpan_conn_state_changed *ev = (void *) buf;
+	size_t ev_size;
+
+	memset(buf, 0, sizeof(buf));
+	bacpy(&ev->addr.bdaddr, bdaddr);
+	ev->addr.type = addr_type;
+	ev->connected = connected;
+
+	ev_size = sizeof(*ev);
+
+	mgmt_event(MGMT_EV_6LOWPAN_CONN_STATE_CHANGED, hdev, ev, ev_size, NULL);
 }
 #endif
 
