@@ -1209,7 +1209,22 @@ void vb2_buffer_done(struct vb2_buffer *vb, enum vb2_buffer_state state)
 		return;
 
 	/* Inform any processes that may be waiting for buffers */
-	wake_up(&q->done_wq);
+	if (q->streaming_for_demux) {
+		struct vb2_demux *demux, *td;
+
+		spin_lock_irqsave(&q->demux_lock, flags);
+		list_for_each_entry_safe(demux, td, &q->demux_list, demux_entry) {
+			if (demux->pid == vb->v4l2_buf.reserved) {
+				demux->buffer_done = 1;
+				list_del(&demux->demux_entry);
+
+				wake_up(&demux->done_wq);
+				break;
+			}
+		}
+		spin_unlock_irqrestore(&q->demux_lock, flags);
+	} else
+		wake_up(&q->done_wq);
 }
 EXPORT_SYMBOL_GPL(vb2_buffer_done);
 
@@ -1790,6 +1805,7 @@ static int vb2_internal_qbuf(struct vb2_queue *q, struct v4l2_buffer *b)
 {
 	int ret = vb2_queue_or_prepare_buf(q, b, "qbuf");
 	struct vb2_buffer *vb;
+	unsigned long flags;
 
 	if (ret)
 		return ret;
@@ -1816,8 +1832,10 @@ static int vb2_internal_qbuf(struct vb2_queue *q, struct v4l2_buffer *b)
 	 * Add to the queued buffers list, a buffer will stay on it until
 	 * dequeued in dqbuf.
 	 */
+	spin_lock_irqsave(&q->queued_lock, flags);
 	list_add_tail(&vb->queued_entry, &q->queued_list);
 	q->queued_count++;
+	spin_unlock_irqrestore(&q->queued_lock, flags);
 	q->waiting_for_buffers = false;
 	vb->state = VB2_BUF_STATE_QUEUED;
 	if (V4L2_TYPE_IS_OUTPUT(q->type)) {
@@ -1893,8 +1911,9 @@ EXPORT_SYMBOL_GPL(vb2_qbuf);
  * for dequeuing
  *
  * Will sleep if required for nonblocking == false.
+ * In case of V4L2, pid is unused.
  */
-static int __vb2_wait_for_done_vb(struct vb2_queue *q, int nonblocking)
+static int __vb2_wait_for_done_vb(struct vb2_queue *q, int nonblocking, u32 pid)
 {
 	/*
 	 * All operations on vb_done_list are performed under done_lock
@@ -1904,6 +1923,12 @@ static int __vb2_wait_for_done_vb(struct vb2_queue *q, int nonblocking)
 	 * long as we hold the driver's lock, the list will remain not
 	 * empty if list_empty() check succeeds.
 	 */
+
+	struct vb2_demux demux = {
+		.buffer_done = 0,
+		.pid = pid,
+	};
+	struct vb2_demux *td = &demux;
 
 	for (;;) {
 		int ret;
@@ -1918,11 +1943,33 @@ static int __vb2_wait_for_done_vb(struct vb2_queue *q, int nonblocking)
 			return -EIO;
 		}
 
-		if (!list_empty(&q->done_list)) {
-			/*
-			 * Found a buffer that we were waiting for.
-			 */
-			break;
+		if (q->streaming_for_demux) {
+			struct vb2_buffer *vb;
+			unsigned long flags;
+
+			if (td->buffer_done) {
+				dprintk(1, "buffer is done, pid %d!\n", td->pid);
+				break;
+			}
+
+			/* Also, we have to find a done buffer in the done_list */
+			spin_lock_irqsave(&q->done_lock, flags);
+			list_for_each_entry(vb, &q->done_list, done_entry) {
+				if (vb->v4l2_buf.reserved == td->pid) {
+					dprintk(1, "found a done buffer, pid %d!\n",
+							td->pid);
+					spin_unlock_irqrestore(&q->done_lock, flags);
+					return 0;
+				}
+			}
+			spin_unlock_irqrestore(&q->done_lock, flags);
+		} else {
+			if (!list_empty(&q->done_list)) {
+				/*
+				 * Found a buffer that we were waiting for.
+				 */
+				break;
+			}
 		}
 
 		if (nonblocking) {
@@ -1942,9 +1989,22 @@ static int __vb2_wait_for_done_vb(struct vb2_queue *q, int nonblocking)
 		 * All locks have been released, it is safe to sleep now.
 		 */
 		dprintk(3, "will sleep waiting for buffers\n");
-		ret = wait_event_interruptible(q->done_wq,
-				!list_empty(&q->done_list) || !q->streaming ||
-				q->error);
+		if (q->streaming_for_demux) {
+			unsigned long flags;
+
+			init_waitqueue_head(&td->done_wq);
+
+			spin_lock_irqsave(&q->demux_lock, flags);
+			list_add_tail(&td->demux_entry, &q->demux_list);
+			spin_unlock_irqrestore(&q->demux_lock, flags);
+
+			ret = wait_event_interruptible(td->done_wq,
+					td->buffer_done || !q->streaming || q->error);
+		} else {
+			ret = wait_event_interruptible(q->done_wq,
+					!list_empty(&q->done_list) || !q->streaming ||
+					q->error);
+		}
 
 		/*
 		 * We need to reevaluate both conditions again after reacquiring
@@ -1973,7 +2033,7 @@ static int __vb2_get_done_vb(struct vb2_queue *q, struct vb2_buffer **vb,
 	/*
 	 * Wait for at least one buffer to become available on the done_list.
 	 */
-	ret = __vb2_wait_for_done_vb(q, nonblocking);
+	ret = __vb2_wait_for_done_vb(q, nonblocking, b->reserved);
 	if (ret)
 		return ret;
 
@@ -1982,7 +2042,14 @@ static int __vb2_get_done_vb(struct vb2_queue *q, struct vb2_buffer **vb,
 	 * is not empty, so no need for another list_empty(done_list) check.
 	 */
 	spin_lock_irqsave(&q->done_lock, flags);
-	*vb = list_first_entry(&q->done_list, struct vb2_buffer, done_entry);
+	if (q->streaming_for_demux) {
+		list_for_each_entry((*vb), &q->done_list, done_entry) {
+			if ((*vb)->v4l2_buf.reserved == b->reserved)
+				break;
+		}
+	} else
+		*vb = list_first_entry(&q->done_list, struct vb2_buffer, done_entry);
+
 	/*
 	 * Only remove the buffer from done_list if v4l2_buffer can handle all
 	 * the planes.
@@ -2044,6 +2111,7 @@ static void __vb2_dqbuf(struct vb2_buffer *vb)
 static int vb2_internal_dqbuf(struct vb2_queue *q, struct v4l2_buffer *b, bool nonblocking)
 {
 	struct vb2_buffer *vb = NULL;
+	unsigned long flags;
 	int ret;
 
 	if (b->type != q->type) {
@@ -2071,8 +2139,10 @@ static int vb2_internal_dqbuf(struct vb2_queue *q, struct v4l2_buffer *b, bool n
 	/* Fill buffer information for the userspace */
 	__fill_v4l2_buffer(vb, b);
 	/* Remove from videobuf queue */
+	spin_lock_irqsave(&q->queued_lock, flags);
 	list_del(&vb->queued_entry);
 	q->queued_count--;
+	spin_unlock_irqrestore(&q->queued_lock, flags);
 	/* go back to dequeued state */
 	__vb2_dqbuf(vb);
 
@@ -2683,6 +2753,7 @@ int vb2_queue_init(struct vb2_queue *q)
 		V4L2_BUF_FLAG_TIMESTAMP_UNKNOWN);
 
 	INIT_LIST_HEAD(&q->queued_list);
+	spin_lock_init(&q->queued_lock);
 	INIT_LIST_HEAD(&q->done_list);
 	spin_lock_init(&q->done_lock);
 	mutex_init(&q->mmap_lock);
@@ -2690,6 +2761,11 @@ int vb2_queue_init(struct vb2_queue *q)
 
 	if (q->buf_struct_size == 0)
 		q->buf_struct_size = sizeof(struct vb2_buffer);
+
+	if (q->streaming_for_demux) {
+		INIT_LIST_HEAD(&q->demux_list);
+		spin_lock_init(&q->demux_lock);
+	}
 
 	return 0;
 }

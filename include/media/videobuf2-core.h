@@ -407,6 +407,7 @@ struct vb2_queue {
 	u32				timestamp_flags;
 	gfp_t				gfp_flags;
 	u32				min_buffers_needed;
+	u32				streaming_for_demux;
 
 /* private: internal use only */
 	struct mutex			mmap_lock;
@@ -415,12 +416,16 @@ struct vb2_queue {
 	unsigned int			num_buffers;
 
 	struct list_head		queued_list;
+	spinlock_t			queued_lock;
 	unsigned int			queued_count;
 
 	atomic_t			owned_by_drv_count;
 	struct list_head		done_list;
 	spinlock_t			done_lock;
 	wait_queue_head_t		done_wq;
+
+	struct list_head		demux_list;
+	spinlock_t			demux_lock;
 
 	void				*alloc_ctx[VIDEO_MAX_PLANES];
 	unsigned int			plane_sizes[VIDEO_MAX_PLANES];
@@ -444,6 +449,15 @@ struct vb2_queue {
 	u32				cnt_start_streaming;
 	u32				cnt_stop_streaming;
 #endif
+};
+
+struct vb2_demux {
+	wait_queue_head_t		done_wq;
+	u32				buffer_done;
+	u32				pid;
+
+	struct list_head		demux_entry;
+	void				*priv;
 };
 
 void *vb2_plane_vaddr(struct vb2_buffer *vb, unsigned int plane_no);

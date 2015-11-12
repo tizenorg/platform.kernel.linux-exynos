@@ -25,6 +25,8 @@
 #define _UAPI_DVBDMX_H_
 
 #include <linux/types.h>
+#include <linux/videodev2.h>
+
 #ifndef __KERNEL__
 #include <time.h>
 #endif
@@ -151,5 +153,11 @@ struct dmx_stc {
 #define DMX_GET_STC              _IOWR('o', 50, struct dmx_stc)
 #define DMX_ADD_PID              _IOW('o', 51, __u16)
 #define DMX_REMOVE_PID           _IOW('o', 52, __u16)
+
+/* added ioctl commands for buffer pool implementation. */
+#define DMX_REQBUFS		_IOWR('o', 53, struct v4l2_requestbuffers)
+#define DMX_QUERYBUF		_IOWR('o', 54, struct v4l2_buffer)
+#define DMX_QBUF		_IOWR('o', 55, struct v4l2_buffer)
+#define DMX_DQBUF		_IOWR('o', 56, struct v4l2_buffer)
 
 #endif /* _UAPI_DVBDMX_H_ */

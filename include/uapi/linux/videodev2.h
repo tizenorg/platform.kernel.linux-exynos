@@ -775,6 +775,8 @@ struct v4l2_buffer {
 	} m;
 	__u32			length;
 	__u32			reserved2;
+
+	/* reserved will be used as 'pid' for each filter */
 	__u32			reserved;
 };
 

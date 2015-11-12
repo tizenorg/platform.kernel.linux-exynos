@@ -39,6 +39,7 @@
 #include "dvbdev.h"
 #include "demux.h"
 #include "dvb_ringbuffer.h"
+#include "dvb_videobuf2.h"
 
 enum dmxdev_type {
 	DMXDEV_TYPE_NONE,
@@ -88,8 +89,9 @@ struct dmxdev_filter {
 	struct timer_list timer;
 	int todo;
 	u8 secheader[3];
-};
 
+	struct dvb_videobuf2_devctx vctx;
+};
 
 struct dmxdev {
 	struct dvb_device *dvbdev;
@@ -110,8 +112,10 @@ struct dmxdev {
 
 	struct mutex mutex;
 	spinlock_t lock;
-};
 
+	struct dvb_videobuf2_devctx dvr_vctx;
+	u16 streaming_io;
+};
 
 int dvb_dmxdev_init(struct dmxdev *dmxdev, struct dvb_adapter *);
 void dvb_dmxdev_release(struct dmxdev *dmxdev);
