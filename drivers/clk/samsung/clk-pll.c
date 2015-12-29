@@ -295,6 +295,8 @@ static int samsung_pll36xx_set_rate(struct clk_hw *hw, unsigned long drate,
 	pll_con0 = __raw_readl(pll->con_reg);
 	pll_con1 = __raw_readl(pll->con_reg + 4);
 
+	pll_con0 |= 1 << 31;
+
 	if (!(samsung_pll36xx_mpk_change(rate, pll_con0, pll_con1))) {
 		/* If only s change, change just s value only*/
 		pll_con0 &= ~(PLL36XX_SDIV_MASK << PLL36XX_SDIV_SHIFT);
