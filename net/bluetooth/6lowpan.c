@@ -907,6 +907,9 @@ static inline void chan_ready_cb(struct l2cap_chan *chan)
 
 	add_peer_chan(chan, dev);
 	ifup(dev->netdev);
+	/* IPSP : Send connection changed state with interface info to bluez */
+	mgmt_6lowpan_conn_changed(dev->hdev, dev->netdev->name, &chan->dst,
+				chan->dst_type, true);
 }
 
 static inline struct l2cap_chan *chan_new_conn_cb(struct l2cap_chan *pchan)
@@ -964,6 +967,10 @@ static void chan_close_cb(struct l2cap_chan *chan)
 			       last ? "last " : "1 ", peer);
 			BT_DBG("chan %p orig refcnt %d", chan,
 			       atomic_read(&chan->kref.refcount));
+
+			/* IPSP : Send connection changed state info to bluez */
+			mgmt_6lowpan_conn_changed(dev->hdev, NULL, &chan->dst,
+						chan->dst_type, false);
 
 			l2cap_chan_put(chan);
 			break;
@@ -1106,6 +1113,16 @@ static int bt_6lowpan_disconnect(struct l2cap_conn *conn, u8 dst_type)
 	l2cap_chan_close(peer->chan, ENOENT);
 
 	return 0;
+}
+
+int _bt_6lowpan_connect(bdaddr_t *addr, u8 dst_type)
+{
+	return bt_6lowpan_connect(addr, dst_type);
+}
+
+int _bt_6lowpan_disconnect(struct l2cap_conn *conn, u8 dst_type)
+{
+	return bt_6lowpan_disconnect(conn, dst_type);
 }
 
 static struct l2cap_chan *bt_6lowpan_listen(void)
@@ -1432,6 +1449,38 @@ static int device_event(struct notifier_block *unused,
 static struct notifier_block bt_6lowpan_dev_notifier = {
 	.notifier_call = device_event,
 };
+
+void bt_6lowpan_enable(void)
+{
+	if (enable_6lowpan != true) {
+		disconnect_all_peers();
+
+		enable_6lowpan = true;
+
+		if (listen_chan) {
+			l2cap_chan_close(listen_chan, 0);
+			l2cap_chan_put(listen_chan);
+		}
+
+		listen_chan = bt_6lowpan_listen();
+
+		register_netdevice_notifier(&bt_6lowpan_dev_notifier);
+	}
+}
+
+void bt_6lowpan_disable(void)
+{
+	if (enable_6lowpan == true) {
+		if (listen_chan) {
+			l2cap_chan_close(listen_chan, 0);
+			l2cap_chan_put(listen_chan);
+			listen_chan = NULL;
+		}
+		disconnect_devices();
+		unregister_netdevice_notifier(&bt_6lowpan_dev_notifier);
+		enable_6lowpan = false;
+	}
+}
 
 static int __init bt_6lowpan_init(void)
 {
