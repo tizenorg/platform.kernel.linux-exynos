@@ -501,6 +501,28 @@ struct mgmt_cp_start_service_discovery {
 	__le16 uuid_count;
 	__u8 uuids[0][16];
 } __packed;
+
+/* START IPSP : TIZEN specific opcodes for IPSP/BLE 6LOWPAN changes */
+/* Sync the opcodes values with bluez while testing */
+#define MGMT_OP_ENABLE_6LOWPAN	0x003B
+#define MGMT_ENABLE_BT_6LOWPAN_SIZE			1
+struct mgmt_cp_enable_6lowpan {
+	__u8 enable_6lowpan;
+} __packed;
+
+#define MGMT_OP_CONNECT_6LOWPAN	0x003C
+struct mgmt_cp_connect_6lowpan {
+	struct mgmt_addr_info addr;
+} __packed;
+#define MGMT_CONNECT_6LOWPAN_SIZE	7
+
+#define MGMT_OP_DISCONNECT_6LOWPAN	0x003D
+struct mgmt_cp_disconnect_6lowpan {
+	struct mgmt_addr_info addr;
+} __packed;
+#define MGMT_DISCONNECT_6LOWPAN_SIZE	7
+/* END IPSP : TIZEN specific opcodes for IPSP/BLE 6LOWPAN changes */
+
 #define MGMT_START_SERVICE_DISCOVERY_SIZE 4
 
 #define MGMT_EV_CMD_COMPLETE		0x0001
@@ -685,3 +707,10 @@ struct mgmt_ev_new_conn_param {
 #define MGMT_EV_UNCONF_INDEX_REMOVED	0x001e
 
 #define MGMT_EV_NEW_CONFIG_OPTIONS	0x001f
+
+#define MGMT_EV_6LOWPAN_CONN_STATE_CHANGED		0x0020
+struct mgmt_ev_6lowpan_conn_state_changed {
+	struct	mgmt_addr_info addr;
+	__u8	connected;
+	__u8	ifname[16];
+} __packed;
