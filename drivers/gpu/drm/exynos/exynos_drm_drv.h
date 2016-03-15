@@ -16,7 +16,9 @@
 #define _EXYNOS_DRM_DRV_H_
 
 #include <drm/drmP.h>
+#include <drm/drm_sync_helper.h>
 #include <linux/module.h>
+#include <linux/dma-buf.h>
 
 #define MAX_CRTC	3
 #define MAX_PLANE	5
@@ -105,6 +107,16 @@ struct exynos_drm_plane {
 	bool transparency:1;
 	bool activated:1;
 	bool enabled:1;
+
+#ifdef CONFIG_DRM_DMA_SYNC
+	unsigned fence_context;
+	atomic_t fence_seqno;
+	struct fence *fence;
+	struct drm_reservation_cb rcb;
+
+	struct fence *pending_fence;
+	bool pending_needs_vblank;
+#endif
 };
 
 /*
