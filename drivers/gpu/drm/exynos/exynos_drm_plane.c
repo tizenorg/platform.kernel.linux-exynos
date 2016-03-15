@@ -18,6 +18,7 @@
 #include "exynos_drm_fb.h"
 #include "exynos_drm_gem.h"
 #include "exynos_drm_plane.h"
+#include "exynos_trace.h"
 
 static const uint32_t formats[] = {
 	DRM_FORMAT_XRGB8888,
@@ -150,6 +151,7 @@ static void exynos_plane_update_cb(struct drm_reservation_cb *rcb, void *params)
 	struct exynos_drm_crtc *exynos_crtc =
 					to_exynos_crtc(exynos_plane->base.crtc);
 
+	trace_exynos_win_commit(exynos_crtc, exynos_plane);
 	if (exynos_crtc->ops->win_commit)
 		exynos_crtc->ops->win_commit(exynos_crtc,
 					     exynos_plane->zpos);
