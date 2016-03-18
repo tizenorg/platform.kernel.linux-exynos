@@ -151,7 +151,7 @@ static void exynos_plane_update_cb(struct drm_reservation_cb *rcb, void *params)
 	struct exynos_drm_crtc *exynos_crtc =
 					to_exynos_crtc(exynos_plane->base.crtc);
 
-	trace_exynos_win_commit(exynos_crtc, exynos_plane);
+	trace_exynos_update_cb(exynos_crtc, exynos_plane);
 	if (exynos_crtc->ops->win_commit)
 		exynos_crtc->ops->win_commit(exynos_crtc,
 					     exynos_plane->zpos);
@@ -168,10 +168,13 @@ static void exynos_plane_update_cb(struct drm_reservation_cb *rcb, void *params)
 static int exynos_plane_fence(struct exynos_drm_plane *plane,
 			      struct exynos_drm_gem_obj *obj)
 {
+	struct drm_crtc *crtc = plane->base.crtc;
+	struct exynos_drm_crtc *exynos_crtc;
 	struct reservation_object *resv;
 	struct fence *fence;
 	int ret;
 
+	exynos_crtc = to_exynos_crtc(crtc);
 	resv = obj->base.dma_buf->resv;
 
 	ww_mutex_lock(&resv->lock, NULL);
@@ -194,13 +197,19 @@ static int exynos_plane_fence(struct exynos_drm_plane *plane,
 
 	drm_reservation_cb_init(&plane->rcb, exynos_plane_update_cb, plane);
 
+	trace_exynos_cb_add(exynos_crtc, plane);
+
 	ret = drm_reservation_cb_add(&plane->rcb, resv, false);
 	if (ret < 0) {
 		DRM_ERROR("Adding reservation to callback failed: %d\n", ret);
 		goto err_fence;
 	}
 
+	trace_exynos_add_shared_fence(exynos_crtc, plane);
+
 	reservation_object_add_shared_fence(resv, plane->pending_fence);
+
+	trace_exynos_cb_done(exynos_crtc, plane);
 
 	drm_reservation_cb_done(&plane->rcb);
 

@@ -26,31 +26,60 @@
 #define TRACE_SYSTEM_STRING __stringify(TRACE_SYSTEM)
 #define TRACE_INCLUDE_FILE exynos_trace
 
-TRACE_EVENT(exynos_win_commit,
-	    TP_PROTO(struct exynos_drm_crtc *crtc, struct exynos_drm_plane *plane),
+DECLARE_EVENT_CLASS(exynos_fence,
+	    TP_PROTO(struct exynos_drm_crtc *crtc,
+			struct exynos_drm_plane *plane),
 
 	    TP_ARGS(crtc, plane),
 
 	    TP_STRUCT__entry(
-		    __field(struct fence *, fence)
 		    __field(u32, seqno)
+		    __field(u32, count)
 		    __field(u32, type)
 		    __field(u32, zpos)
 		    ),
 
 	    TP_fast_assign(
-		    __entry->fence = plane->pending_fence;
 		    __entry->seqno = plane->pending_fence->seqno;
+		    __entry->count = atomic_read(&plane->rcb.count);
 		    __entry->type = crtc->type;
 		    __entry->zpos = plane->zpos;
 		    ),
 
-	    TP_printk("fence = %p:%d, crtc type = %d, plane zpos = %d",
-		    __entry->fence, __entry->seqno, __entry->type,
-		    __entry->zpos)
+	    TP_printk("fence(%d) rcb(%d), crtc type(%d), plane zpos(%d)",
+		    __entry->seqno, __entry->count,
+		    __entry->type, __entry->zpos)
 );
 
-TRACE_EVENT(exynos_finish_vsync,
+DEFINE_EVENT(exynos_fence, exynos_cb_add,
+	    TP_PROTO(struct exynos_drm_crtc *crtc,
+			struct exynos_drm_plane *plane),
+
+	    TP_ARGS(crtc, plane)
+);
+
+DEFINE_EVENT(exynos_fence, exynos_add_shared_fence,
+	    TP_PROTO(struct exynos_drm_crtc *crtc,
+			struct exynos_drm_plane *plane),
+
+	    TP_ARGS(crtc, plane)
+);
+
+DEFINE_EVENT(exynos_fence, exynos_cb_done,
+	    TP_PROTO(struct exynos_drm_crtc *crtc,
+			struct exynos_drm_plane *plane),
+
+	    TP_ARGS(crtc, plane)
+);
+
+DEFINE_EVENT(exynos_fence, exynos_update_cb,
+	    TP_PROTO(struct exynos_drm_crtc *crtc,
+			struct exynos_drm_plane *plane),
+
+	    TP_ARGS(crtc, plane)
+);
+
+DECLARE_EVENT_CLASS(exynos_modeset,
 	    TP_PROTO(struct exynos_drm_crtc *crtc),
 
 	    TP_ARGS(crtc),
@@ -67,6 +96,19 @@ TRACE_EVENT(exynos_finish_vsync,
 
 	    TP_printk("crtc pipe = %d, crtc type = %d",
 		    __entry->pipe, __entry->type)
+);
+
+
+DEFINE_EVENT(exynos_modeset, exynos_finish_vsync,
+	    TP_PROTO(struct exynos_drm_crtc *crtc),
+
+	    TP_ARGS(crtc)
+);
+
+DEFINE_EVENT(exynos_modeset, exynos_request_pageflip,
+	    TP_PROTO(struct exynos_drm_crtc *crtc),
+
+	    TP_ARGS(crtc)
 );
 
 #endif /* _EXYNOS_TRACE_H_ */

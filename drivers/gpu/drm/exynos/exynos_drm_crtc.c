@@ -177,6 +177,8 @@ static int exynos_drm_crtc_page_flip(struct drm_crtc *crtc,
 		return -EINVAL;
 	}
 
+	trace_exynos_request_pageflip(exynos_crtc);
+
 	mutex_lock(&dev->struct_mutex);
 
 	if (event) {
@@ -326,7 +328,6 @@ void exynos_drm_crtc_finish_pageflip(struct drm_device *dev, int pipe)
 	struct exynos_drm_crtc *exynos_crtc = to_exynos_crtc(drm_crtc);
 	unsigned long flags;
 
-	trace_exynos_finish_vsync(exynos_crtc);
 	spin_lock_irqsave(&dev->event_lock, flags);
 
 	list_for_each_entry_safe(e, t, &dev_priv->pageflip_event_list,
@@ -340,6 +341,8 @@ void exynos_drm_crtc_finish_pageflip(struct drm_device *dev, int pipe)
 		drm_vblank_put(dev, pipe);
 		atomic_set(&exynos_crtc->pending_flip, 0);
 		wake_up(&exynos_crtc->pending_flip_queue);
+
+		trace_exynos_finish_vsync(exynos_crtc);
 	}
 
 	spin_unlock_irqrestore(&dev->event_lock, flags);
