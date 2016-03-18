@@ -26,6 +26,7 @@
 #define TRACE_SYSTEM_STRING __stringify(TRACE_SYSTEM)
 #define TRACE_INCLUDE_FILE exynos_trace
 
+#ifdef CONFIG_DRM_DMA_SYNC
 DECLARE_EVENT_CLASS(exynos_fence,
 	    TP_PROTO(struct exynos_drm_crtc *crtc,
 			struct exynos_drm_plane *plane),
@@ -78,6 +79,7 @@ DEFINE_EVENT(exynos_fence, exynos_update_cb,
 
 	    TP_ARGS(crtc, plane)
 );
+#endif
 
 DECLARE_EVENT_CLASS(exynos_modeset,
 	    TP_PROTO(struct exynos_drm_crtc *crtc),

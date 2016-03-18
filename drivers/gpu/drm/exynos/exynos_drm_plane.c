@@ -145,6 +145,7 @@ void exynos_plane_mode_set(struct drm_plane *plane, struct drm_crtc *crtc,
 		exynos_crtc->ops->win_mode_set(exynos_crtc, exynos_plane);
 }
 
+#ifdef CONFIG_DRM_DMA_SYNC
 static void exynos_plane_update_cb(struct drm_reservation_cb *rcb, void *params)
 {
 	struct exynos_drm_plane *exynos_plane = params;
@@ -164,7 +165,9 @@ static void exynos_plane_update_cb(struct drm_reservation_cb *rcb, void *params)
 
 	/* TODO */
 }
+#endif
 
+#ifdef CONFIG_DRM_DMA_SYNC
 static int exynos_plane_fence(struct exynos_drm_plane *plane,
 			      struct exynos_drm_gem_obj *obj)
 {
@@ -225,6 +228,7 @@ err_mutex:
 
 	return ret;
 }
+#endif
 
 int
 exynos_update_plane(struct drm_plane *plane, struct drm_crtc *crtc,
@@ -254,6 +258,7 @@ exynos_update_plane(struct drm_plane *plane, struct drm_crtc *crtc,
 		return PTR_ERR(obj);
 	}
 
+#ifdef CONFIG_DRM_DMA_SYNC
 	if (!obj->base.dma_buf || !obj->base.dma_buf->resv) {
 		if (exynos_crtc->ops->win_commit)
 			exynos_crtc->ops->win_commit(exynos_crtc,
@@ -262,6 +267,12 @@ exynos_update_plane(struct drm_plane *plane, struct drm_crtc *crtc,
 	}
 
 	return exynos_plane_fence(exynos_plane, obj);
+#else
+	if (exynos_crtc->ops->win_commit)
+		exynos_crtc->ops->win_commit(exynos_crtc, exynos_plane->zpos);
+
+	return 0;
+#endif
 }
 
 static int exynos_disable_plane(struct drm_plane *plane)
@@ -273,8 +284,10 @@ static int exynos_disable_plane(struct drm_plane *plane)
 		exynos_crtc->ops->win_disable(exynos_crtc,
 					      exynos_plane->zpos);
 
+#ifdef CONFIG_DRM_DMA_SYNC
 	exynos_plane->fence_context = fence_context_alloc(1);
 	atomic_set(&exynos_plane->fence_seqno, 0);
+#endif
 
 	return 0;
 }
