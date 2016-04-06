@@ -284,11 +284,6 @@ static int exynos_disable_plane(struct drm_plane *plane)
 		exynos_crtc->ops->win_disable(exynos_crtc,
 					      exynos_plane->zpos);
 
-#ifdef CONFIG_DRM_DMA_SYNC
-	exynos_plane->fence_context = fence_context_alloc(1);
-	atomic_set(&exynos_plane->fence_seqno, 0);
-#endif
-
 	return 0;
 }
 
@@ -367,6 +362,11 @@ struct drm_plane *exynos_plane_init(struct drm_device *dev,
 		exynos_plane->zpos = DEFAULT_ZPOS;
 	else
 		exynos_plane_attach_zpos_property(&exynos_plane->base);
+
+#ifdef CONFIG_DRM_DMA_SYNC
+	exynos_plane->fence_context = fence_context_alloc(1);
+	atomic_set(&exynos_plane->fence_seqno, 0);
+#endif
 
 	return &exynos_plane->base;
 }
