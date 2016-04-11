@@ -35,6 +35,7 @@ DECLARE_EVENT_CLASS(exynos_fence,
 
 	    TP_STRUCT__entry(
 		    __field(u32, seqno)
+		    __field(u32, context)
 		    __field(u32, count)
 		    __field(u32, type)
 		    __field(u32, zpos)
@@ -42,6 +43,7 @@ DECLARE_EVENT_CLASS(exynos_fence,
 
 	    TP_fast_assign(
 		    __entry->seqno = plane->pending_fence->seqno;
+		    __entry->context = plane->pending_fence->context;
 		    __entry->count = atomic_read(&plane->rcb.count);
 		    __entry->type = crtc->type;
 		    __entry->zpos = plane->zpos;
@@ -67,6 +69,13 @@ DEFINE_EVENT(exynos_fence, exynos_add_shared_fence,
 );
 
 DEFINE_EVENT(exynos_fence, exynos_cb_done,
+	    TP_PROTO(struct exynos_drm_crtc *crtc,
+			struct exynos_drm_plane *plane),
+
+	    TP_ARGS(crtc, plane)
+);
+
+DEFINE_EVENT(exynos_fence, exynos_cb_fast_path,
 	    TP_PROTO(struct exynos_drm_crtc *crtc,
 			struct exynos_drm_plane *plane),
 
