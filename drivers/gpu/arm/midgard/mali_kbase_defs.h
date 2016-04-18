@@ -46,10 +46,6 @@
 #include <drm/drm_sync_helper.h>
 #endif				/* CONFIG_DRM_DMA_SYNC */
 
-#ifdef CONFIG_SYNC
-#include "sync.h"
-#endif				/* CONFIG_SYNC */
-
 #ifdef CONFIG_DEBUG_FS
 #include <linux/debugfs.h>
 #endif				/* CONFIG_DEBUG_FS */
@@ -306,10 +302,6 @@ struct kbase_jd_atom {
 	struct drm_reservation_cb rcb;
 	struct fence *rendered_fence;
 #endif				/* CONFIG_DRM_DMA_SYNC */
-#ifdef CONFIG_SYNC
-	struct sync_fence *fence;
-	struct sync_fence_waiter sync_waiter;
-#endif				/* CONFIG_SYNC */
 
 	/* Note: refer to kbasep_js_atom_retained_state, which will take a copy of some of the following members */
 	enum base_jd_event_code event_code;

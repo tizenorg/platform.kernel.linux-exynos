@@ -62,9 +62,6 @@
 #include <linux/version.h>
 #include <mali_kbase_hw.h>
 #include <platform/mali_kbase_platform_common.h>
-#ifdef CONFIG_SYNC
-#include <mali_kbase_sync.h>
-#endif /* CONFIG_SYNC */
 #ifdef CONFIG_PM_DEVFREQ
 #include <linux/devfreq.h>
 #endif /* CONFIG_PM_DEVFREQ */
@@ -754,34 +751,11 @@ copy_failed:
 
 	case KBASE_FUNC_STREAM_CREATE:
 		{
-#ifdef CONFIG_SYNC
-			struct kbase_uk_stream_create *screate = (struct kbase_uk_stream_create *)args;
-
-			if (sizeof(*screate) != args_size)
-				goto bad_size;
-
-			if (strnlen(screate->name, sizeof(screate->name)) >= sizeof(screate->name)) {
-				/* not NULL terminated */
-				ukh->ret = MALI_ERROR_FUNCTION_FAILED;
-				break;
-			}
-
-			ukh->ret = kbase_stream_create(screate->name, &screate->fd);
-#else /* CONFIG_SYNC */
 			ukh->ret = MALI_ERROR_FUNCTION_FAILED;
-#endif /* CONFIG_SYNC */
 			break;
 		}
 	case KBASE_FUNC_FENCE_VALIDATE:
 		{
-#ifdef CONFIG_SYNC
-			struct kbase_uk_fence_validate *fence_validate = (struct kbase_uk_fence_validate *)args;
-
-			if (sizeof(*fence_validate) != args_size)
-				goto bad_size;
-
-			ukh->ret = kbase_fence_validate(fence_validate->fd);
-#endif /* CONFIG_SYNC */
 			break;
 		}
 

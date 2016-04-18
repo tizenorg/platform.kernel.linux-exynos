@@ -61,10 +61,6 @@
  *  - KBASE_TRACE_ADD( kbdev, JM_JOB_COMPLETE, subcode, kctx, uatom, val );
  */
 
-#if 0 /* Dummy section to avoid breaking formatting */
-int dummy_array[] = {
-#endif
-
 /*
  * Core events
  */
@@ -256,9 +252,5 @@ int dummy_array[] = {
 /* Unused code just to make it easier to not have a comma at the end.
  * All other codes MUST come before this */
 	KBASE_TRACE_CODE_MAKE_CODE(DUMMY)
-
-#if 0 /* Dummy section to avoid breaking formatting */
-};
-#endif
 
 /* ***** THE LACK OF HEADER GUARDS IS INTENTIONAL ***** */
