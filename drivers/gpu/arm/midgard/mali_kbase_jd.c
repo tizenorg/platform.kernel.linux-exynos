@@ -98,7 +98,7 @@ static int jd_run_atom(struct kbase_jd_atom *katom)
 	return kbasep_js_add_job(kctx, katom);
 }
 
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 /* Add the katom to the resource waiting list.
  * Atoms must be added to the waiting list after a successful call to kds_async_waitall.
  * The caller must hold the kbase_jd_context.lock */
@@ -187,7 +187,7 @@ static void kbase_cancel_resource_wait_job(struct kbase_jd_atom *katom)
 			kbasep_js_try_schedule_head_ctx(katom->kctx->kbdev);
 	}
 }
-#endif			/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
+#endif			/* CONFIG_DRM_DMA_SYNC */
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
 static mali_error kbase_jd_umm_map(struct kbase_context *kctx, struct kbase_va_region *reg)
@@ -265,12 +265,10 @@ static void kbase_jd_umm_unmap(struct kbase_context *kctx, struct kbase_mem_phy_
 }
 #endif				/* CONFIG_DMA_SHARED_BUFFER */
 
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 static bool kbase_atom_has_sync_obj(struct kbase_jd_atom *katom)
 {
-#ifdef CONFIG_KDS
-	return (katom->kds_rset != NULL);
-#elif defined(CONFIG_DRM_DMA_SYNC)
+#if   defined(CONFIG_DRM_DMA_SYNC)
 	return (katom->rendered_fence != NULL);
 #else
 	return false;
@@ -279,19 +277,17 @@ static bool kbase_atom_has_sync_obj(struct kbase_jd_atom *katom)
 
 static void kbase_atom_release_sync(struct kbase_jd_atom *katom)
 {
-#ifdef CONFIG_KDS
-	kds_resource_set_release_sync(&katom->kds_rset);
-#elif defined(CONFIG_DRM_DMA_SYNC)
+#if   defined(CONFIG_DRM_DMA_SYNC)
 	/* clean up rcb in case context was zapped and callback wasn't called */
 	drm_reservation_cb_fini(&katom->rcb);
 	drm_fence_signal_and_put(&katom->rendered_fence);
 #endif
 }
-#endif				/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
+#endif				/* CONFIG_DRM_DMA_SYNC */
 
 void kbase_jd_free_external_resources(struct kbase_jd_atom *katom)
 {
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 	if (kbase_atom_has_sync_obj(katom)) {
 		struct kbase_jd_context * jctx = &katom->kctx->jctx;
 
@@ -306,7 +302,7 @@ void kbase_jd_free_external_resources(struct kbase_jd_atom *katom)
 
 		kbase_atom_release_sync(katom);
 	}
-#endif				/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
+#endif				/* CONFIG_DRM_DMA_SYNC */
 }
 
 static void kbase_jd_post_external_resources(struct kbase_jd_atom *katom)
@@ -314,11 +310,11 @@ static void kbase_jd_post_external_resources(struct kbase_jd_atom *katom)
 	KBASE_DEBUG_ASSERT(katom);
 	KBASE_DEBUG_ASSERT(katom->core_req & BASE_JD_REQ_EXTERNAL_RESOURCES);
 
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 	/* Prevent the sync object from triggering the atom in case of zapping */
 	if (kbase_atom_has_sync_obj(katom))
 		katom->dep_satisfied = MALI_TRUE;
-#endif				/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
+#endif				/* CONFIG_DRM_DMA_SYNC */
 
 	kbase_gpu_vm_lock(katom->kctx);
 	/* only roll back if extres is non-NULL */
@@ -356,24 +352,6 @@ static void kbase_jd_post_external_resources(struct kbase_jd_atom *katom)
 	}
 	kbase_gpu_vm_unlock(katom->kctx);
 }
-
-#if (defined(CONFIG_KDS) && defined(CONFIG_UMP)) || defined(CONFIG_DMA_SHARED_BUFFER_USES_KDS)
-static void add_kds_resource(struct kds_resource *kds_res, struct kds_resource **kds_resources, u32 *kds_res_count, unsigned long *kds_access_bitmap, mali_bool exclusive)
-{
-	u32 i;
-
-	for (i = 0; i < *kds_res_count; i++) {
-		/* Duplicate resource, ignore */
-		if (kds_resources[i] == kds_res)
-			return;
-	}
-
-	kds_resources[*kds_res_count] = kds_res;
-	if (exclusive)
-		set_bit(*kds_res_count, kds_access_bitmap);
-	(*kds_res_count)++;
-}
-#endif
 
 #ifdef CONFIG_DRM_DMA_SYNC
 static int reservation_sync(struct kbase_jd_atom *katom,
@@ -453,11 +431,6 @@ static mali_error kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, c
 {
 	mali_error err_ret_val = MALI_ERROR_FUNCTION_FAILED;
 	u32 res_no;
-#ifdef CONFIG_KDS
-	u32 kds_res_count = 0;
-	struct kds_resource **kds_resources = NULL;
-	unsigned long *kds_access_bitmap = NULL;
-#endif				/* CONFIG_KDS */
 #ifdef CONFIG_DRM_DMA_SYNC
 	struct reservation_object **resvs = NULL;
 	unsigned int num_resvs = 0;
@@ -493,24 +466,6 @@ static mali_error kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, c
 		err_ret_val = MALI_ERROR_FUNCTION_FAILED;
 		goto early_err_out;
 	}
-#ifdef CONFIG_KDS
-	/* assume we have to wait for all */
-	KBASE_DEBUG_ASSERT(0 != katom->nr_extres);
-	kds_resources = kmalloc_array(katom->nr_extres, sizeof(struct kds_resource *), GFP_KERNEL);
-
-	if (NULL == kds_resources) {
-		err_ret_val = MALI_ERROR_OUT_OF_MEMORY;
-		goto early_err_out;
-	}
-
-	KBASE_DEBUG_ASSERT(0 != katom->nr_extres);
-	kds_access_bitmap = kzalloc(sizeof(unsigned long) * ((katom->nr_extres + BITS_PER_LONG - 1) / BITS_PER_LONG), GFP_KERNEL);
-
-	if (NULL == kds_access_bitmap) {
-		err_ret_val = MALI_ERROR_OUT_OF_MEMORY;
-		goto early_err_out;
-	}
-#endif				/* CONFIG_KDS */
 #ifdef CONFIG_DRM_DMA_SYNC
 	resvs = kmalloc(sizeof(struct reservation_object *) * katom->nr_extres,
 			GFP_KERNEL);
@@ -548,27 +503,11 @@ static mali_error kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, c
 		switch (reg->alloc->type) {
 		case BASE_TMEM_IMPORT_TYPE_UMP:
 			{
-#if defined(CONFIG_KDS) && defined(CONFIG_UMP)
-				struct kds_resource *kds_res;
-
-				kds_res = ump_dd_kds_resource_get(reg->alloc->imported.ump_handle);
-				if (kds_res)
-					add_kds_resource(kds_res, kds_resources, &kds_res_count,
-							kds_access_bitmap,
-							res->ext_resource & BASE_EXT_RES_ACCESS_EXCLUSIVE);
-#endif				/*defined(CONFIG_KDS) && defined(CONFIG_UMP) */
 				break;
 			}
 #ifdef CONFIG_DMA_SHARED_BUFFER
 		case BASE_TMEM_IMPORT_TYPE_UMM:
 			{
-#ifdef CONFIG_DMA_SHARED_BUFFER_USES_KDS
-				struct kds_resource *kds_res;
-
-				kds_res = get_dma_buf_kds_resource(reg->alloc->imported.umm.dma_buf);
-				if (kds_res)
-					add_kds_resource(kds_res, kds_resources, &kds_res_count, kds_access_bitmap, res->ext_resource & BASE_EXT_RES_ACCESS_EXCLUSIVE);
-#endif
 #ifdef CONFIG_DRM_DMA_SYNC
 				struct reservation_object *resv =
 					reg->alloc->imported.umm.dma_buf->resv;
@@ -613,29 +552,6 @@ static mali_error kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, c
 	/* drop the vm lock before we call into kds */
 	kbase_gpu_vm_unlock(katom->kctx);
 
-#ifdef CONFIG_KDS
-	if (kds_res_count) {
-		int wait_failed;
-
-		/* We have resources to wait for with kds */
-		katom->dep_satisfied = MALI_FALSE;
-
-		wait_failed = kds_async_waitall(&katom->kds_rset,
-				&katom->kctx->jctx.kds_cb, katom, NULL,
-				kds_res_count, kds_access_bitmap,
-				kds_resources);
-
-		if (wait_failed)
-			goto failed_sync_setup;
-		else
-			kbase_jd_resource_waiters_add(katom);
-	} else {
-		/* Nothing to wait for, so kds dep met */
-		katom->dep_satisfied = MALI_TRUE;
-	}
-	kfree(kds_resources);
-	kfree(kds_access_bitmap);
-#endif				/* CONFIG_KDS */
 #ifdef CONFIG_DRM_DMA_SYNC
 	if (num_resvs) {
 		int ret;
@@ -655,13 +571,13 @@ static mali_error kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, c
 
 /* error handling section */
 
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
  failed_sync_setup:
 #if defined(CONFIG_DMA_SHARED_BUFFER) || defined(CONFIG_MALI_DEBUG)
 	/* lock before we unmap */
 	kbase_gpu_vm_lock(katom->kctx);
 #endif				/* defined(CONFIG_DMA_SHARED_BUFFER) || defined(CONFIG_MALI_DEBUG) */
-#endif				/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
+#endif				/* CONFIG_DRM_DMA_SYNC */
  failed_loop:
 	/* undo the loop work */
 	while (res_no-- > 0) {
@@ -693,10 +609,6 @@ static mali_error kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, c
  early_err_out:
 	kfree(katom->extres);
 	katom->extres = NULL;
-#ifdef CONFIG_KDS
-	kfree(kds_resources);
-	kfree(kds_access_bitmap);
-#endif				/* CONFIG_KDS */
 #ifdef CONFIG_DRM_DMA_SYNC
 	drm_fence_signal_and_put(&katom->rendered_fence);
 	kfree(resvs);
@@ -729,7 +641,7 @@ STATIC INLINE void jd_resolve_dep(struct list_head *out_list, struct kbase_jd_at
 				kbase_jd_katom_dep_clear(&dep_atom->dep[other_d]);
 			}
 
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 			if (!dep_atom->dep_satisfied) {
 				/* Just set kds_dep_satisfied to true. If the callback happens after this then it will early out and
 				 * do nothing. If the callback doesn't happen then kbase_jd_post_external_resources will clean up
@@ -744,9 +656,9 @@ STATIC INLINE void jd_resolve_dep(struct list_head *out_list, struct kbase_jd_at
 
 			list_add_tail(&dep_atom->dep_item[0], out_list);
 		} else if (!kbase_jd_katom_dep_atom(&dep_atom->dep[other_d])) {
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 			if (dep_atom->dep_satisfied)
-#endif				/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
+#endif				/* CONFIG_DRM_DMA_SYNC */
 				list_add_tail(&dep_atom->dep_item[0], out_list);
 		}
 	}
@@ -1010,14 +922,11 @@ mali_bool jd_submit_atom(struct kbase_context *kctx,
 	katom->nice_prio = user_atom->prio;
 	katom->atom_flags = 0;
 	katom->retry_count = 0;
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 	/* Start by assuming that the resource dependencies are satisfied,
 	 * kbase_jd_pre_external_resources will correct this if there are dependencies */
 	katom->dep_satisfied = MALI_TRUE;
-#endif				/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
-#ifdef CONFIG_KDS
-	katom->kds_rset = NULL;
-#endif				/* CONFIG_KDS */
+#endif				/* CONFIG_DRM_DMA_SYNC */
 
 	/* Don't do anything if there is a mess up with dependencies.
 	   This is done in a separate cycle to check both the dependencies at ones, otherwise
@@ -1179,13 +1088,13 @@ mali_bool jd_submit_atom(struct kbase_context *kctx,
 		ret = MALI_FALSE;
 		goto out;
 	}
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 	if (!katom->dep_satisfied) {
 		/* Queue atom due to resource dependency */
 		ret = MALI_FALSE;
 		goto out;
 	}
-#endif				/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
+#endif				/* CONFIG_DRM_DMA_SYNC */
 
 	if ((katom->core_req & BASEP_JD_REQ_ATOM_TYPE)
 						  == BASE_JD_REQ_SOFT_REPLAY) {
@@ -1743,7 +1652,7 @@ void kbase_jd_zap_context(struct kbase_context *kctx)
 	}
 
 
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 	/* For each job waiting on a resource, cancel the wait and force the job to
 	 * complete early, this is done so that we don't leave jobs outstanding waiting
 	 * on kds resources which may never be released when contexts are zapped, resulting
@@ -1758,7 +1667,7 @@ void kbase_jd_zap_context(struct kbase_context *kctx)
 
 		kbase_cancel_resource_wait_job(katom);
 	}
-#endif				/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
+#endif				/* CONFIG_DRM_DMA_SYNC */
 
 	mutex_unlock(&kctx->jctx.lock);
 
@@ -1810,9 +1719,6 @@ mali_error kbase_jd_init(struct kbase_context *kctx)
 {
 	int i;
 	mali_error mali_err = MALI_ERROR_NONE;
-#ifdef CONFIG_KDS
-	int err;
-#endif				/* CONFIG_KDS */
 
 	KBASE_DEBUG_ASSERT(kctx);
 
@@ -1839,13 +1745,6 @@ mali_error kbase_jd_init(struct kbase_context *kctx)
 
 	spin_lock_init(&kctx->jctx.tb_lock);
 
-#ifdef CONFIG_KDS
-	err = kds_callback_init(&kctx->jctx.kds_cb, 0, resource_dep_clear);
-	if (0 != err) {
-		mali_err = MALI_ERROR_FUNCTION_FAILED;
-		goto out2;
-	}
-#endif				/* CONFIG_KDS */
 #ifdef CONFIG_DRM_DMA_SYNC
 	kctx->jctx.fence_context = fence_context_alloc(1);
 	atomic_set(&kctx->jctx.fence_seqno, 0);
@@ -1854,10 +1753,6 @@ mali_error kbase_jd_init(struct kbase_context *kctx)
 
 	return MALI_ERROR_NONE;
 
-#ifdef CONFIG_KDS
- out2:
-	destroy_workqueue(kctx->jctx.job_done_wq);
-#endif				/* CONFIG_KDS */
  out1:
 	return mali_err;
 }
@@ -1868,9 +1763,6 @@ void kbase_jd_exit(struct kbase_context *kctx)
 {
 	KBASE_DEBUG_ASSERT(kctx);
 
-#ifdef CONFIG_KDS
-	kds_callback_term(&kctx->jctx.kds_cb);
-#endif				/* CONFIG_KDS */
 	/* Work queue is emptied by this */
 	destroy_workqueue(kctx->jctx.job_done_wq);
 }

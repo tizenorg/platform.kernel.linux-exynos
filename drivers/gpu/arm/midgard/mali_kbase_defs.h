@@ -38,10 +38,6 @@
 #include <linux/mempool.h>
 #include <linux/slab.h>
 
-#ifdef CONFIG_KDS
-#include <linux/kds.h>
-#endif				/* CONFIG_KDS */
-
 #ifdef CONFIG_DRM_DMA_SYNC
 #include <drm/drm_sync_helper.h>
 #endif				/* CONFIG_DRM_DMA_SYNC */
@@ -291,13 +287,10 @@ struct kbase_jd_atom {
 	u64 affinity;
 	u64 jc;
 	enum kbase_atom_coreref_state coreref_state;
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 	struct list_head node;
 	mali_bool dep_satisfied;
-#endif				/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
-#ifdef CONFIG_KDS
-	struct kds_resource_set *kds_rset;
-#endif				/* CONFIG_KDS */
+#endif				/* CONFIG_DRM_DMA_SYNC */
 #ifdef CONFIG_DRM_DMA_SYNC
 	struct drm_reservation_cb rcb;
 	struct fence *rendered_fence;
@@ -381,13 +374,10 @@ struct kbase_jd_context {
 	u32 *tb;
 	size_t tb_wrap_offset;
 
-#ifdef CONFIG_KDS
-	struct kds_callback kds_cb;
-#endif
 #ifdef CONFIG_DRM_DMA_SYNC
 	unsigned fence_context;
 	atomic_t fence_seqno;
-#endif				/* CONFIG_KDS */
+#endif				/* CONFIG_DRM_DMA_SYNC */
 #ifdef CONFIG_GPU_TRACEPOINTS
 	atomic_t work_id;
 #endif
@@ -909,7 +899,7 @@ struct kbase_context {
 	struct kbase_mem_allocator * pgd_allocator;
 
 	struct list_head waiting_soft_jobs;
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 	struct list_head waiting_resource;
 #endif
 

@@ -85,9 +85,9 @@ kbase_create_context(struct kbase_device *kbdev, bool is_compat)
 	mutex_init(&kctx->reg_lock);
 
 	INIT_LIST_HEAD(&kctx->waiting_soft_jobs);
-#if defined(CONFIG_KDS) || defined(CONFIG_DRM_DMA_SYNC)
+#if defined(CONFIG_DRM_DMA_SYNC)
 	INIT_LIST_HEAD(&kctx->waiting_resource);
-#endif				/* CONFIG_KDS or CONFIG_DRM_DMA_SYNC */
+#endif				/* CONFIG_DRM_DMA_SYNC */
 
 	mali_err = kbase_mmu_init(kctx);
 	if (MALI_ERROR_NONE != mali_err)
