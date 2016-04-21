@@ -39,6 +39,8 @@
 #define prandom_u32 random32
 #endif
 
+#include "mali_kbase_ftrace.h"
+
 /*
  * This is the kernel side of the API. Only entry points are:
  * - kbase_jd_submit(): Called from userspace to submit a single bag
@@ -137,6 +139,8 @@ static void resource_dep_clear(void *callback_parameter, void *callback_extra_pa
 	kbdev = katom->kctx->kbdev;
 	KBASE_DEBUG_ASSERT(kbdev);
 
+	trace_mali_dep_callback(katom);
+
 	mutex_lock(&ctx->lock);
 
 	/* resource dependency has already been satisfied (e.g. due to zapping) */
@@ -151,6 +155,8 @@ static void resource_dep_clear(void *callback_parameter, void *callback_extra_pa
 			!kbase_jd_katom_dep_atom(&katom->dep[1])) {
 		/* katom dep complete, attempt to run it */
 		mali_bool resched = MALI_FALSE;
+
+		trace_mali_run_atom(katom);
 
 		resched = jd_run_atom(katom);
 
@@ -794,6 +800,7 @@ mali_bool jd_done_nolock(struct kbase_jd_atom *katom)
 			KBASE_DEBUG_ASSERT(node->status != KBASE_JD_ATOM_STATE_UNUSED);
 
 			if (node->status != KBASE_JD_ATOM_STATE_COMPLETED) {
+				trace_mali_run_atom(node);
 				need_to_try_schedule_context |= jd_run_atom(node);
 			} else {
 				node->event_code = katom->event_code;
@@ -927,6 +934,8 @@ mali_bool jd_submit_atom(struct kbase_context *kctx,
 	 * kbase_jd_pre_external_resources will correct this if there are dependencies */
 	katom->dep_satisfied = MALI_TRUE;
 #endif				/* CONFIG_DRM_DMA_SYNC */
+
+	trace_mali_submit_atom(katom);
 
 	/* Don't do anything if there is a mess up with dependencies.
 	   This is done in a separate cycle to check both the dependencies at ones, otherwise

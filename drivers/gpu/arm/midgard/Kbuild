@@ -114,7 +114,8 @@ SRC := \
 	mali_kbase_mem_profile_debugfs.c \
 	mali_kbase_mmu_hw_direct.c \
 	mali_kbase_disjoint_events.c \
-	mali_kbase_gator_api.c
+	mali_kbase_gator_api.c \
+	mali_kbase_ftrace.c
 
 ifeq ($(MALI_CUSTOMER_RELEASE),0)
 SRC += \
