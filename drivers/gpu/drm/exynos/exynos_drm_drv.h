@@ -271,6 +271,9 @@ struct exynos_drm_private {
 	unsigned long da_space_size;
 
 	unsigned int pipe;
+
+	unsigned gem_fence_context;
+	atomic_t gem_fence_seqno;
 };
 
 /*

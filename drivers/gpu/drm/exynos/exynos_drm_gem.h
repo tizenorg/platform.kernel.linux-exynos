@@ -73,6 +73,7 @@ struct exynos_drm_gem_obj {
 	unsigned long			size;
 	struct vm_area_struct		*vma;
 	unsigned int			flags;
+	struct fence			*pending_fence;
 };
 
 struct page **exynos_gem_get_pages(struct drm_gem_object *obj, gfp_t gfpmask);
