@@ -199,7 +199,7 @@ static int exynos_plane_fence(struct exynos_drm_plane *plane,
 
 	plane->pending_fence = fence;
 
-	if (!reservation_object_test_signaled_rcu(resv, true)) {
+	if (!reservation_object_test_signaled_rcu(resv, false)) {
 		drm_reservation_cb_init(&plane->rcb, exynos_plane_update_cb, plane);
 		trace_exynos_cb_add(exynos_crtc, plane);
 		ret = drm_reservation_cb_add(&plane->rcb, resv, false);
