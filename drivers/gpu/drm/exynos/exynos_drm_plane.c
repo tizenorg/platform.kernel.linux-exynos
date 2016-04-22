@@ -176,7 +176,6 @@ static int exynos_plane_fence(struct exynos_drm_plane *plane,
 	struct reservation_object *resv;
 	struct fence *fence;
 	int ret;
-	bool fast_path = true;
 
 	exynos_crtc = to_exynos_crtc(crtc);
 	resv = obj->base.dma_buf->resv;
@@ -199,6 +198,9 @@ static int exynos_plane_fence(struct exynos_drm_plane *plane,
 
 	plane->pending_fence = fence;
 
+	trace_exynos_add_shared_fence(exynos_crtc, plane);
+	reservation_object_add_shared_fence(resv, plane->pending_fence);
+
 	if (!reservation_object_test_signaled_rcu(resv, false)) {
 		drm_reservation_cb_init(&plane->rcb, exynos_plane_update_cb, plane);
 		trace_exynos_cb_add(exynos_crtc, plane);
@@ -207,13 +209,7 @@ static int exynos_plane_fence(struct exynos_drm_plane *plane,
 			DRM_ERROR("Adding reservation to callback failed: %d\n", ret);
 			goto err_fence;
 		}
-		fast_path = false;
-	}
 
-	trace_exynos_add_shared_fence(exynos_crtc, plane);
-	reservation_object_add_shared_fence(resv, plane->pending_fence);
-
-	if (!fast_path) {
 		trace_exynos_cb_done(exynos_crtc, plane);
 		drm_reservation_cb_done(&plane->rcb);
 	} else {
