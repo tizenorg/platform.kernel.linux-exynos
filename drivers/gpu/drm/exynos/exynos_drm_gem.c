@@ -13,6 +13,7 @@
 #include <drm/drm_vma_manager.h>
 
 #include <linux/dma-buf.h>
+#include <linux/fence.h>
 #include <linux/shmem_fs.h>
 #include <drm/exynos_drm.h>
 
@@ -290,10 +291,14 @@ int exynos_drm_gem_map_ioctl(struct drm_device *dev, void *data,
 int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
 				  struct drm_file *file)
 {
+	struct exynos_drm_private *priv = dev->dev_private;
 	struct drm_exynos_gem_cpu_access *args = data;
 	struct drm_gem_object *obj;
 	struct exynos_drm_gem_obj *exynos_gem;
 	struct exynos_drm_gem_buf *buf;
+	struct reservation_object *resv;
+	struct fence *fence;
+	int ret = 0;
 
 	obj = drm_gem_object_lookup(dev, file, args->handle);
 	if (!obj) {
@@ -303,7 +308,47 @@ int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
 
 	exynos_gem = to_exynos_gem_obj(obj);
 	buf = exynos_gem->buffer;
+	resv = obj->dma_buf->resv;
 
+	if (!resv)
+		goto no_fence;
+
+	ww_mutex_lock(&resv->lock, NULL);
+
+	if (!reservation_object_test_signaled_rcu(resv, true)) {
+		if (file->filp->f_flags & O_NONBLOCK) {
+			ret = -EAGAIN;
+			goto err_fence;
+		}
+
+		ret = reservation_object_wait_timeout_rcu(resv, true, true,
+							MAX_SCHEDULE_TIMEOUT);
+		if (ret < 0) {
+			DRM_ERROR("Waiting for reservation object failed: %d\n", ret);
+			goto err_fence;
+		}
+	}
+
+	ret = reservation_object_reserve_shared(resv);
+	if (ret < 0) {
+		DRM_ERROR("Reserving space for shared fence failed: %d\n", ret);
+		goto err_fence;
+	}
+
+	fence = drm_sw_fence_new(priv->gem_fence_context,
+				 atomic_add_return(1, &priv->gem_fence_seqno));
+	if (IS_ERR(fence)) {
+		ret = PTR_ERR(fence);
+		DRM_ERROR("Failed to create fence: %d\n", ret);
+		goto err_fence;
+	}
+
+	exynos_gem->pending_fence = fence;
+	reservation_object_add_excl_fence(resv, exynos_gem->pending_fence);
+
+	ww_mutex_unlock(&resv->lock);
+
+no_fence:
 	if (exynos_gem->flags & EXYNOS_BO_CACHABLE)
 		dma_sync_sg_for_cpu(dev->dev, buf->sgt->sgl,
 				    buf->sgt->nents, DMA_FROM_DEVICE);
@@ -311,6 +356,10 @@ int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
 	drm_gem_object_unreference_unlocked(obj);
 
 	return 0;
+
+err_fence:
+	ww_mutex_unlock(&resv->lock);
+	return ret;
 }
 
 int exynos_drm_gem_cpu_fini_ioctl(struct drm_device *dev, void *data,
@@ -329,6 +378,11 @@ int exynos_drm_gem_cpu_fini_ioctl(struct drm_device *dev, void *data,
 
 	exynos_gem = to_exynos_gem_obj(obj);
 	buf = exynos_gem->buffer;
+
+	if (exynos_gem->pending_fence) {
+		drm_fence_signal_and_put(&exynos_gem->pending_fence);
+		exynos_gem->pending_fence = NULL;
+	}
 
 	if (exynos_gem->flags & EXYNOS_BO_CACHABLE)
 		dma_sync_sg_for_device(dev->dev, buf->sgt->sgl,
