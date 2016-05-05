@@ -316,17 +316,19 @@ int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
 	ww_mutex_lock(&resv->lock, NULL);
 
 	if (!reservation_object_test_signaled_rcu(resv, true)) {
-		if (file->filp->f_flags & O_NONBLOCK) {
-			ret = -EAGAIN;
-			goto err_fence;
-		}
+		ww_mutex_unlock(&resv->lock);
+
+		if (file->filp->f_flags & O_NONBLOCK)
+			return -EBUSY;
 
 		ret = reservation_object_wait_timeout_rcu(resv, true, true,
 							MAX_SCHEDULE_TIMEOUT);
 		if (ret < 0) {
 			DRM_ERROR("Waiting for reservation object failed: %d\n", ret);
-			goto err_fence;
+			return ret;
 		}
+
+		ww_mutex_lock(&resv->lock, NULL);
 	}
 
 	ret = reservation_object_reserve_shared(resv);
