@@ -92,6 +92,8 @@ struct mixer_context {
 	struct exynos_drm_crtc	*crtc;
 	int			pipe;
 	bool			interlace;
+	bool			vblank_enabled;
+	bool			updated;
 	bool			powered;
 	bool			vp_enabled;
 	bool			has_sclk;
@@ -742,6 +744,9 @@ static irqreturn_t mixer_irq_handler(int irq, void *arg)
 
 	/* handling VSYNC */
 	if (val & MXR_INT_STATUS_VSYNC) {
+		if (!ctx->updated)
+			goto out;
+
 		/* interlace scan need to check shadow register */
 		if (ctx->interlace) {
 			base = mixer_reg_read(res, MXR_GRAPHIC_BASE(0));
@@ -757,6 +762,7 @@ static irqreturn_t mixer_irq_handler(int irq, void *arg)
 
 		drm_handle_vblank(ctx->drm_dev, ctx->pipe);
 		exynos_drm_crtc_finish_pageflip(ctx->drm_dev, ctx->pipe);
+		ctx->updated = false;
 
 		/* set wait vsync event to zero and wake up queue. */
 		if (atomic_read(&ctx->wait_vsync_event)) {
@@ -931,6 +937,7 @@ static int mixer_enable_vblank(struct exynos_drm_crtc *crtc)
 	mixer_reg_write(res, MXR_INT_STATUS, MXR_INT_CLEAR_VSYNC);
 	mixer_reg_writemask(res, MXR_INT_EN, MXR_INT_EN_VSYNC,
 			MXR_INT_EN_VSYNC);
+	mixer_ctx->vblank_enabled = true;
 
 	return 0;
 }
@@ -942,6 +949,7 @@ static void mixer_disable_vblank(struct exynos_drm_crtc *crtc)
 
 	/* disable vsync interrupt */
 	mixer_reg_writemask(res, MXR_INT_EN, 0, MXR_INT_EN_VSYNC);
+	mixer_ctx->vblank_enabled = false;
 }
 
 static void mixer_win_mode_set(struct exynos_drm_crtc *crtc,
@@ -1009,6 +1017,8 @@ static void mixer_win_commit(struct exynos_drm_crtc *crtc, int zpos)
 		mutex_unlock(&mixer_ctx->mixer_mutex);
 		return;
 	}
+	if (mixer_ctx->vblank_enabled)
+		mixer_ctx->updated = true;
 	mutex_unlock(&mixer_ctx->mixer_mutex);
 
 	if (win > 1 && mixer_ctx->vp_enabled)
@@ -1034,6 +1044,7 @@ static void mixer_win_disable(struct exynos_drm_crtc *crtc, int zpos)
 		mixer_ctx->win_data[win].resume = false;
 		return;
 	}
+	mixer_ctx->updated = false;
 	mutex_unlock(&mixer_ctx->mixer_mutex);
 
 	spin_lock_irqsave(&res->reg_slock, flags);
