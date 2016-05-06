@@ -296,9 +296,11 @@ int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
 	struct drm_gem_object *obj;
 	struct exynos_drm_gem_obj *exynos_gem;
 	struct exynos_drm_gem_buf *buf;
+#ifdef CONFIG_DRM_DMA_SYNC
 	struct reservation_object *resv;
 	struct fence *fence;
 	int ret = 0;
+#endif
 
 	obj = drm_gem_object_lookup(dev, file, args->handle);
 	if (!obj) {
@@ -308,6 +310,8 @@ int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
 
 	exynos_gem = to_exynos_gem_obj(obj);
 	buf = exynos_gem->buffer;
+
+#ifdef CONFIG_DRM_DMA_SYNC
 	resv = obj->dma_buf->resv;
 
 	if (!resv)
@@ -351,6 +355,7 @@ int exynos_drm_gem_cpu_prep_ioctl(struct drm_device *dev, void *data,
 	ww_mutex_unlock(&resv->lock);
 
 no_fence:
+#endif
 	if (exynos_gem->flags & EXYNOS_BO_CACHABLE)
 		dma_sync_sg_for_cpu(dev->dev, buf->sgt->sgl,
 				    buf->sgt->nents, DMA_FROM_DEVICE);
@@ -359,9 +364,11 @@ no_fence:
 
 	return 0;
 
+#ifdef CONFIG_DRM_DMA_SYNC
 err_fence:
 	ww_mutex_unlock(&resv->lock);
 	return ret;
+#endif
 }
 
 int exynos_drm_gem_cpu_fini_ioctl(struct drm_device *dev, void *data,
@@ -381,10 +388,12 @@ int exynos_drm_gem_cpu_fini_ioctl(struct drm_device *dev, void *data,
 	exynos_gem = to_exynos_gem_obj(obj);
 	buf = exynos_gem->buffer;
 
+#ifdef CONFIG_DRM_DMA_SYNC
 	if (exynos_gem->pending_fence) {
 		drm_fence_signal_and_put(&exynos_gem->pending_fence);
 		exynos_gem->pending_fence = NULL;
 	}
+#endif
 
 	if (exynos_gem->flags & EXYNOS_BO_CACHABLE)
 		dma_sync_sg_for_device(dev->dev, buf->sgt->sgl,
