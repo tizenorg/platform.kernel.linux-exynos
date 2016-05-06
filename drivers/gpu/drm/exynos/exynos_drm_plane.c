@@ -157,6 +157,8 @@ static void exynos_plane_update_cb(struct drm_reservation_cb *rcb, void *params)
 		exynos_crtc->ops->win_commit(exynos_crtc,
 					     exynos_plane->zpos);
 
+	exynos_plane->update_pending = false;
+
 	if (exynos_plane->pending_fence) {
 		drm_fence_signal_and_put(&exynos_plane->fence);
 		exynos_plane->fence = exynos_plane->pending_fence;
@@ -196,6 +198,7 @@ static int exynos_plane_fence(struct exynos_drm_plane *plane,
 		goto err_mutex;
 	}
 
+	plane->update_pending = true;
 	plane->pending_fence = fence;
 
 	trace_exynos_add_shared_fence(exynos_crtc, plane);
@@ -224,6 +227,7 @@ static int exynos_plane_fence(struct exynos_drm_plane *plane,
 err_fence:
 	fence_put(plane->pending_fence);
 	plane->pending_fence = NULL;
+	plane->update_pending = false;
 err_mutex:
 	ww_mutex_unlock(&resv->lock);
 
@@ -243,6 +247,9 @@ exynos_update_plane(struct drm_plane *plane, struct drm_crtc *crtc,
 	struct exynos_drm_plane *exynos_plane = to_exynos_plane(plane);
 	struct exynos_drm_gem_obj *obj;
 	int ret;
+
+	if (exynos_plane->update_pending)
+		return -EBUSY;
 
 	ret = exynos_check_plane(plane, fb);
 	if (ret < 0)
@@ -280,6 +287,8 @@ static int exynos_disable_plane(struct drm_plane *plane)
 {
 	struct exynos_drm_plane *exynos_plane = to_exynos_plane(plane);
 	struct exynos_drm_crtc *exynos_crtc = to_exynos_crtc(plane->crtc);
+
+	exynos_plane->update_pending = false;
 
 	if (exynos_crtc && exynos_crtc->ops->win_disable)
 		exynos_crtc->ops->win_disable(exynos_crtc,

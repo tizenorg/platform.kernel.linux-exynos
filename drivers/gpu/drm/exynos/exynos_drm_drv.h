@@ -107,6 +107,7 @@ struct exynos_drm_plane {
 	bool transparency:1;
 	bool activated:1;
 	bool enabled:1;
+	bool update_pending:1;
 
 #ifdef CONFIG_DRM_DMA_SYNC
 	unsigned fence_context;
