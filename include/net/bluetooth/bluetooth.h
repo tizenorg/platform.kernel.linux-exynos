@@ -373,4 +373,9 @@ void mgmt_exit(void);
 
 void bt_sock_reclassify_lock(struct sock *sk, int proto);
 
+
+/* IPSP related changes to initialize/deinitialize 6lowpan */
+void bt_6lowpan_enable(void);
+void bt_6lowpan_disable(void);
+
 #endif /* __BLUETOOTH_H */
