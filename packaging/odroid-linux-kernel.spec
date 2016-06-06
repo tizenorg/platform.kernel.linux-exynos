@@ -42,6 +42,14 @@ Provides: %{variant}-kernel-modules-uname-r = %{fullVersion}
 %description -n %{variant}-linux-kernel-modules
 Kernel-modules includes the loadable kernel modules(.ko files) for %{target_board}
 
+%package -n %{variant}-usb-host-tests-modules
+Summary: Modules for testing usb host API on %{target_board}
+Group: System/Kernel
+
+%description -n %{variant}-usb-host-tests-modules
+This package provides dummy_hcd.ko and usb_f_fs.ko kernel modules
+which are required to run usb host API test on  %{target_board}
+
 %prep
 %setup -q -n linux-kernel-%{version}
 
@@ -92,7 +100,10 @@ rm -f %{buildroot}/lib/modules/%{fullVersion}/source
 rm -rf %{buildroot}
 
 %files -n %{variant}-linux-kernel-modules
-/lib/modules/
+/lib/modules/%{fullVersion}/kernel/crypto/*
+/lib/modules/%{fullVersion}/kernel/drivers/media/*
+/lib/modules/%{fullVersion}/kernel/net/*
+/lib/modules/%{fullVersion}/modules.*
 
 %files -n %{variant}-linux-kernel
 %license COPYING
@@ -100,3 +111,7 @@ rm -rf %{buildroot}
 /boot/*.dtb
 /boot/System.map*
 /boot/config*
+
+%files -n %{variant}-usb-host-tests-modules
+/lib/modules/%{fullVersion}/kernel/drivers/usb/gadget/udc/dummy_hcd.ko
+/lib/modules/%{fullVersion}/kernel/drivers/usb/gadget/function/usb_f_fs.ko
