@@ -784,3 +784,10 @@ struct mgmt_ev_advertising_added {
 struct mgmt_ev_advertising_removed {
 	__u8    instance;
 } __packed;
+
+#define MGMT_EV_6LOWPAN_CONN_STATE_CHANGED		0x0025
+struct mgmt_ev_6lowpan_conn_state_changed {
+	struct	mgmt_addr_info addr;
+	__u8	connected;
+	__u8	ifname[16];
+} __packed;

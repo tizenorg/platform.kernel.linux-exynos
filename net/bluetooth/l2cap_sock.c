@@ -302,7 +302,11 @@ done:
 static int l2cap_sock_accept(struct socket *sock, struct socket *newsock,
 			     int flags)
 {
+#ifdef CONFIG_TIZEN_WIP
+	DECLARE_WAITQUEUE(wait, current);
+#else
 	DEFINE_WAIT_FUNC(wait, woken_wake_function);
+#endif
 	struct sock *sk = sock->sk, *nsk;
 	long timeo;
 	int err = 0;
@@ -316,6 +320,9 @@ static int l2cap_sock_accept(struct socket *sock, struct socket *newsock,
 	/* Wait for an incoming connection. (wake-one). */
 	add_wait_queue_exclusive(sk_sleep(sk), &wait);
 	while (1) {
+#ifdef CONFIG_TIZEN_WIP
+		set_current_state(TASK_INTERRUPTIBLE);
+#endif
 		if (sk->sk_state != BT_LISTEN) {
 			err = -EBADFD;
 			break;
@@ -336,11 +343,17 @@ static int l2cap_sock_accept(struct socket *sock, struct socket *newsock,
 		}
 
 		release_sock(sk);
-
+#ifdef CONFIG_TIZEN_WIP
+		timeo = schedule_timeout(timeo);
+#else
 		timeo = wait_woken(&wait, TASK_INTERRUPTIBLE, timeo);
+#endif
 
 		lock_sock_nested(sk, L2CAP_NESTING_PARENT);
 	}
+#ifdef CONFIG_TIZEN_WIP
+	__set_current_state(TASK_RUNNING);
+#endif
 	remove_wait_queue(sk_sleep(sk), &wait);
 
 	if (err)

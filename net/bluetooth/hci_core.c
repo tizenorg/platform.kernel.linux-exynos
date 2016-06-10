@@ -56,6 +56,23 @@ DEFINE_MUTEX(hci_cb_list_lock);
 /* HCI ID Numbering */
 static DEFINE_IDA(hci_index_ida);
 
+
+/* ---- HCI notifications ---- */
+
+#ifdef CONFIG_TIZEN_WIP
+static ATOMIC_NOTIFIER_HEAD(hci_notifier);
+
+int hci_register_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&hci_notifier, nb);
+}
+
+int hci_unregister_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&hci_notifier, nb);
+}
+#endif
+
 /* ----- HCI requests ----- */
 
 #define HCI_REQ_DONE	  0
@@ -70,6 +87,11 @@ static DEFINE_IDA(hci_index_ida);
 static void hci_notify(struct hci_dev *hdev, int event)
 {
 	hci_sock_dev_event(hdev, event);
+#ifdef CONFIG_TIZEN_WIP
+	if (event == HCI_DEV_REG || event == HCI_DEV_UNREG
+			|| event == HCI_DEV_WRITE)
+		atomic_notifier_call_chain(&hci_notifier, event, hdev);
+#endif
 }
 
 /* ---- HCI debugfs entries ---- */
@@ -749,6 +771,13 @@ static void hci_init3_req(struct hci_request *req, unsigned long opt)
 			events[1] |= 0x04;	/* LE Direct Advertising
 						 * Report
 						 */
+#ifdef CONFIG_TIZEN_WIP
+		/* If the controller supports LE enhanced connection complete,
+		 * enable the corresponding event.
+		 */
+		if (hdev->le_features[0] & HCI_LL_PRIVACY)
+			events[1] |= 0x02;	/* LE Enhanced Conn Complete */
+#endif
 
 		/* If the controller supports the LE Read Local P-256
 		 * Public Key command, enable the corresponding event.
@@ -1047,6 +1076,52 @@ void hci_discovery_set_state(struct hci_dev *hdev, int state)
 		break;
 	}
 }
+
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Seperate LE discovery */
+bool hci_le_discovery_active(struct hci_dev *hdev)
+{
+	struct discovery_state *discov = &hdev->le_discovery;
+
+	switch (discov->state) {
+	case DISCOVERY_FINDING:
+	case DISCOVERY_RESOLVING:
+		return true;
+
+	default:
+		return false;
+	}
+}
+
+void hci_le_discovery_set_state(struct hci_dev *hdev, int state)
+{
+	BT_DBG("%s state %u -> %u", hdev->name, hdev->le_discovery.state, state);
+
+	if (hdev->le_discovery.state == state)
+		return;
+
+	switch (state) {
+	case DISCOVERY_STOPPED:
+		hci_update_background_scan(hdev);
+
+		if (hdev->le_discovery.state != DISCOVERY_STARTING)
+			mgmt_le_discovering(hdev, 0);
+		break;
+	case DISCOVERY_STARTING:
+		break;
+	case DISCOVERY_FINDING:
+		mgmt_le_discovering(hdev, 1);
+		break;
+	case DISCOVERY_RESOLVING:
+		break;
+	case DISCOVERY_STOPPING:
+		break;
+	}
+
+	hdev->le_discovery.state = state;
+}
+/* END TIZEN_Bluetooth */
+#endif
 
 void hci_inquiry_cache_flush(struct hci_dev *hdev)
 {
@@ -2242,6 +2317,11 @@ static bool hci_persistent_key(struct hci_dev *hdev, struct hci_conn *conn,
 	if (conn->remote_auth == 0x02 || conn->remote_auth == 0x03)
 		return true;
 
+#ifdef CONFIG_TIZEN_WIP
+	/* In case of auth_type '0x01'. It is authenticated by MITM, so store it */
+	if (key_type == HCI_LK_AUTH_COMBINATION_P192)
+		return true;
+#endif
 	/* If none of the above criteria match, then don't store the key
 	 * persistently */
 	return false;
@@ -2505,6 +2585,15 @@ bool hci_bdaddr_is_paired(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 type)
 
 	return false;
 }
+#ifdef CONFIG_TIZEN_WIP
+/* Timeout Error Event is being handled */
+static void hci_tx_timeout_error_evt(struct hci_dev *hdev)
+{
+	BT_ERR("%s H/W TX Timeout error", hdev->name);
+
+	mgmt_tx_timeout_error(hdev);
+}
+#endif
 
 /* HCI command timer function */
 static void hci_cmd_timeout(struct work_struct *work)
@@ -2521,6 +2610,9 @@ static void hci_cmd_timeout(struct work_struct *work)
 		BT_ERR("%s command tx timeout", hdev->name);
 	}
 
+#ifdef CONFIG_TIZEN_WIP
+	hci_tx_timeout_error_evt(hdev);
+#endif
 	atomic_set(&hdev->cmd_cnt, 1);
 	queue_work(hdev->workqueue, &hdev->cmd_work);
 }
@@ -3026,6 +3118,17 @@ struct hci_dev *hci_alloc_dev(void)
 	hdev->le_adv_channel_map = 0x07;
 	hdev->le_adv_min_interval = 0x0800;
 	hdev->le_adv_max_interval = 0x0800;
+
+#ifdef CONFIG_TIZEN_WIP
+	hdev->sniff_max_interval = 800;
+	hdev->sniff_min_interval = 400;
+
+	/* automatically enable sniff mode for connection */
+	hdev->idle_timeout = TIZEN_SNIFF_TIMEOUT * 1000; /* 2 Second */
+
+	hdev->adv_filter_policy = 0x00;
+	hdev->adv_type = 0x00;
+#endif
 	hdev->le_scan_interval = 0x0060;
 	hdev->le_scan_window = 0x0030;
 	hdev->le_conn_min_interval = 0x0028;
@@ -3365,6 +3468,10 @@ static void hci_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 
 	/* Get rid of skb owner, prior to sending to the driver. */
 	skb_orphan(skb);
+
+#ifdef CONFIG_TIZEN_WIP
+	hci_notify(hdev, HCI_DEV_WRITE);
+#endif
 
 	err = hdev->send(hdev, skb);
 	if (err < 0) {
