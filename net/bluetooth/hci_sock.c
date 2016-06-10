@@ -33,6 +33,9 @@
 #include <net/bluetooth/mgmt.h>
 
 #include "mgmt_util.h"
+#ifdef CONFIG_TIZEN_WIP
+#include <net/bluetooth/mgmt_tizen.h>
+#endif
 
 static LIST_HEAD(mgmt_chan_list);
 static DEFINE_MUTEX(mgmt_chan_list_lock);
@@ -992,6 +995,20 @@ static int hci_mgmt_cmd(struct hci_mgmt_chan *chan, struct sock *sk,
 
 	if (opcode >= chan->handler_count ||
 	    chan->handlers[opcode].func == NULL) {
+#if 0
+#ifdef CONFIG_TIZEN_WIP
+		u16 tizen_opcode = opcode - TIZEN_OP_CODE_BASE;
+
+		if (tizen_opcode > 0 &&
+		    tizen_opcode < ARRAY_SIZE(tizen_mgmt_handlers) &&
+		    tizen_mgmt_handlers[tizen_opcode].func) {
+
+		    handler = &tizen_mgmt_handlers[tizen_opcode];
+		    goto handle_mgmt;
+		}
+#endif
+#endif
+
 		BT_DBG("Unknown op %u", opcode);
 		err = mgmt_cmd_status(sk, index, opcode,
 				      MGMT_STATUS_UNKNOWN_COMMAND);
@@ -1039,6 +1056,12 @@ static int hci_mgmt_cmd(struct hci_mgmt_chan *chan, struct sock *sk,
 	}
 
 	var_len = (handler->flags & HCI_MGMT_VAR_LEN);
+#if 0
+#ifdef CONFIG_TIZEN_WIP
+handle_mgmt:
+#endif
+#endif
+
 	if ((var_len && len < handler->data_len) ||
 	    (!var_len && len != handler->data_len)) {
 		err = mgmt_cmd_status(sk, index, opcode,

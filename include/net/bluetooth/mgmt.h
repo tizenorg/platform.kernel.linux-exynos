@@ -554,6 +554,23 @@ struct mgmt_rp_add_advertising {
 	__u8	instance;
 } __packed;
 
+#if 0
+#define MGMT_OP_ENABLE_6LOWPAN		0x003F
+struct mgmt_cp_enable_6lowpan {
+	__u8 enable_6lowpan;
+} __packed;
+
+#define MGMT_OP_CONNECT_6LOWPAN	0x0040
+struct mgmt_cp_connect_6lowpan {
+	struct mgmt_addr_info addr;
+} __packed;
+
+#define MGMT_OP_DISCONNECT_6LOWPAN	0x0041
+struct mgmt_cp_disconnect_6lowpan {
+	struct mgmt_addr_info addr;
+} __packed;
+#endif
+
 #define MGMT_ADV_FLAG_CONNECTABLE	BIT(0)
 #define MGMT_ADV_FLAG_DISCOV		BIT(1)
 #define MGMT_ADV_FLAG_LIMITED_DISCOV	BIT(2)
@@ -784,3 +801,12 @@ struct mgmt_ev_advertising_added {
 struct mgmt_ev_advertising_removed {
 	__u8    instance;
 } __packed;
+
+#if 0
+#define MGMT_EV_6LOWPAN_CONN_STATE_CHANGED		0x0025
+struct mgmt_ev_6lowpan_conn_state_changed {
+	struct	mgmt_addr_info addr;
+	__u8	connected;
+	__u8	ifname[16];
+} __packed;
+#endif

@@ -210,6 +210,9 @@ struct hci_dev {
 	__u8		features[HCI_MAX_PAGES][8];
 	__u8		le_features[8];
 	__u8		le_white_list_size;
+#ifdef CONFIG_TIZEN_WIP
+	__u8		le_res_list_size;
+#endif
 	__u8		le_states[8];
 	__u8		commands[64];
 	__u8		hci_ver;
@@ -337,6 +340,11 @@ struct hci_dev {
 	void			*smp_bredr_data;
 
 	struct discovery_state	discovery;
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Seperate LE discovery */
+	struct discovery_state	le_discovery;
+/* END TIZEN_Bluetooth */
+#endif
 	struct hci_conn_hash	conn_hash;
 
 	struct list_head	mgmt_pending;
@@ -379,6 +387,13 @@ struct hci_dev {
 	__u32			rpa_timeout;
 	struct delayed_work	rpa_expired;
 	bdaddr_t		rpa;
+ #ifdef CONFIG_TIZEN_WIP
+	__u8			adv_filter_policy;
+	__u8			adv_type;
+
+	__u8			manufacturer_len;
+	__u8			manufacturer_data[HCI_MAX_AD_LENGTH - 3];
+#endif
 
 	int (*open)(struct hci_dev *hdev);
 	int (*close)(struct hci_dev *hdev);
@@ -470,6 +485,13 @@ struct hci_conn {
 
 	struct hci_conn	*link;
 
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: RSSI Monitoring */
+	bool		rssi_monitored;
+/* END TIZEN_Bluetooth :: RSSI Monitoring */
+	__u8		sco_role;
+	__u16		voice_setting;
+#endif
 	void (*connect_cfm_cb)	(struct hci_conn *conn, u8 status);
 	void (*security_cfm_cb)	(struct hci_conn *conn, u8 status);
 	void (*disconn_cfm_cb)	(struct hci_conn *conn, u8 reason);
@@ -570,6 +592,12 @@ bool hci_discovery_active(struct hci_dev *hdev);
 
 void hci_discovery_set_state(struct hci_dev *hdev, int state);
 
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Seperate LE discovery */
+bool hci_le_discovery_active(struct hci_dev *hdev);
+void hci_le_discovery_set_state(struct hci_dev *hdev, int state);
+/* END TIZEN_Bluetooth */
+#endif
 static inline int inquiry_cache_empty(struct hci_dev *hdev)
 {
 	return list_empty(&hdev->discovery.all);
@@ -600,6 +628,10 @@ u32 hci_inquiry_cache_update(struct hci_dev *hdev, struct inquiry_data *data,
 void hci_inquiry_cache_flush(struct hci_dev *hdev);
 
 /* ----- HCI Connections ----- */
+#ifdef CONFIG_TIZEN_WIP
+#define LINK_SUPERVISION_TIMEOUT   0x1F40   /* n * 0.625 = 5 seconds */
+#endif
+
 enum {
 	HCI_CONN_AUTH_PEND,
 	HCI_CONN_REAUTH_PEND,
@@ -771,6 +803,92 @@ static inline struct hci_conn *hci_conn_hash_lookup_ba(struct hci_dev *hdev,
 	return NULL;
 }
 
+#ifdef CONFIG_TIZEN_WIP
+
+static inline struct hci_conn *hci_conn_hash_lookup_sco(struct hci_dev *hdev)
+{
+        struct hci_conn_hash *h = &hdev->conn_hash;
+        struct hci_conn  *c;
+
+        rcu_read_lock();
+
+        list_for_each_entry_rcu(c, &h->list, list) {
+                if (c->type == SCO_LINK || c->type == ESCO_LINK) {
+                        rcu_read_unlock();
+                        return c;
+                }
+        }
+
+        rcu_read_unlock();
+
+        return NULL;
+}
+
+/* BEGIN TIZEN_Bluetooth :: RSSI Monitoring */
+static inline bool hci_conn_rssi_state_set(struct hci_dev *hdev,
+					__u8 type, bdaddr_t *ba, bool value)
+{
+	struct hci_conn_hash *h = &hdev->conn_hash;
+	struct hci_conn  *c;
+	__u8 conn_type;
+
+	if (type == 0x01)
+		conn_type = LE_LINK;
+	else
+		conn_type = ACL_LINK;
+
+	rcu_read_lock();
+
+	list_for_each_entry_rcu(c, &h->list, list) {
+		if (c->type == conn_type && !bacmp(&c->dst, ba)) {
+			c->rssi_monitored = value;
+			rcu_read_unlock();
+			return true;
+		}
+	}
+
+	rcu_read_unlock();
+	return false;
+}
+
+static inline void hci_conn_rssi_unset_all(struct hci_dev *hdev,
+					__u8 type)
+{
+	struct hci_conn_hash *h = &hdev->conn_hash;
+	struct hci_conn  *c;
+	__u8 conn_type;
+
+	if (type == 0x01)
+		conn_type = LE_LINK;
+	else
+		conn_type = ACL_LINK;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(c, &h->list, list) {
+		if (c->type == conn_type)
+			c->rssi_monitored = false;
+	}
+	rcu_read_unlock();
+}
+
+static inline int hci_conn_hash_lookup_rssi_count(struct hci_dev *hdev)
+{
+	struct hci_conn_hash *h = &hdev->conn_hash;
+	struct hci_conn  *c;
+	int count = 0;
+	rcu_read_lock();
+
+	list_for_each_entry_rcu(c, &h->list, list) {
+		if (c->rssi_monitored == true)
+			++count;
+	}
+
+	rcu_read_unlock();
+	return count;
+}
+/* END TIZEN_Bluetooth :: RSSI Monitoring */
+#endif
+
 static inline struct hci_conn *hci_conn_hash_lookup_state(struct hci_dev *hdev,
 							__u8 type, __u16 state)
 {
@@ -818,6 +936,9 @@ int hci_conn_check_secure(struct hci_conn *conn, __u8 sec_level);
 int hci_conn_security(struct hci_conn *conn, __u8 sec_level, __u8 auth_type,
 		      bool initiator);
 int hci_conn_switch_role(struct hci_conn *conn, __u8 role);
+#ifdef CONFIG_TIZEN_WIP
+int hci_conn_change_supervision_timeout(struct hci_conn *conn, __u16 timeout);
+#endif
 
 void hci_conn_enter_active_mode(struct hci_conn *conn, __u8 force_active);
 
@@ -867,6 +988,12 @@ static inline void hci_conn_drop(struct hci_conn *conn)
 {
 	BT_DBG("hcon %p orig refcnt %d", conn, atomic_read(&conn->refcnt));
 
+#ifdef CONFIG_TIZEN_WIP
+	if (!atomic_read(&conn->refcnt)) {
+		BT_ERR("conn->refcnt is zero");
+		return;
+	}
+#endif
 	if (atomic_dec_and_test(&conn->refcnt)) {
 		unsigned long timeo;
 
@@ -950,6 +1077,9 @@ int hci_dev_cmd(unsigned int cmd, void __user *arg);
 int hci_get_dev_list(void __user *arg);
 int hci_get_dev_info(void __user *arg);
 int hci_get_conn_list(void __user *arg);
+#ifdef CONFIG_TIZEN_WIP
+u32 get_link_mode(struct hci_conn *conn);
+#endif
 int hci_get_conn_info(struct hci_dev *hdev, void __user *arg);
 int hci_get_auth_info(struct hci_dev *hdev, void __user *arg);
 int hci_inquiry(void __user *arg);
@@ -1281,6 +1411,12 @@ static inline int hci_check_conn_params(u16 min, u16 max, u16 latency,
 int hci_register_cb(struct hci_cb *hcb);
 int hci_unregister_cb(struct hci_cb *hcb);
 
+#ifdef CONFIG_TIZEN_WIP
+int hci_register_notifier(struct notifier_block *nb);
+int hci_unregister_notifier(struct notifier_block *nb);
+#endif
+bool hci_req_pending(struct hci_dev *hdev);
+
 struct sk_buff *__hci_cmd_sync(struct hci_dev *hdev, u16 opcode, u32 plen,
 			       const void *param, u32 timeout);
 struct sk_buff *__hci_cmd_sync_ev(struct hci_dev *hdev, u16 opcode, u32 plen,
@@ -1357,6 +1493,12 @@ void mgmt_device_connected(struct hci_dev *hdev, struct hci_conn *conn,
 void mgmt_device_disconnected(struct hci_dev *hdev, bdaddr_t *bdaddr,
 			      u8 link_type, u8 addr_type, u8 reason,
 			      bool mgmt_connected);
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: name update changes */
+int mgmt_device_name_update(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 *name,
+                           u8 name_len);
+/* END TIZEN_Bluetooth :: name update changes */
+#endif
 void mgmt_disconnect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr,
 			    u8 link_type, u8 addr_type, u8 status);
 void mgmt_connect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
@@ -1391,10 +1533,22 @@ void mgmt_set_local_name_complete(struct hci_dev *hdev, u8 *name, u8 status);
 void mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 		       u8 addr_type, u8 *dev_class, s8 rssi, u32 flags,
 		       u8 *eir, u16 eir_len, u8 *scan_rsp, u8 scan_rsp_len);
+#ifdef CONFIG_TIZEN_WIP /* TIZEN_Bluetooth :: Pass adv type */
+void mgmt_le_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
+		       u8 addr_type, u8 *dev_class, s8 rssi, u32 flags,
+		       u8 *eir, u16 eir_len, u8 *scan_rsp, u8 scan_rsp_len, u8 adv_type);
+void mgmt_6lowpan_conn_changed(struct hci_dev *hdev, char if_name[16],
+			bdaddr_t *bdaddr, u8 addr_type, bool connected);
+#endif
 void mgmt_remote_name(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 		      u8 addr_type, s8 rssi, u8 *name, u8 name_len);
 void mgmt_discovering(struct hci_dev *hdev, u8 discovering);
 bool mgmt_powering_down(struct hci_dev *hdev);
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: Seperate LE discovery */
+void mgmt_le_discovering(struct hci_dev *hdev, u8 discovering);
+/* END TIZEN_Bluetooth */
+#endif
 void mgmt_new_ltk(struct hci_dev *hdev, struct smp_ltk *key, bool persistent);
 void mgmt_new_irk(struct hci_dev *hdev, struct smp_irk *irk);
 void mgmt_new_csrk(struct hci_dev *hdev, struct smp_csrk *csrk,
@@ -1404,6 +1558,28 @@ void mgmt_new_conn_param(struct hci_dev *hdev, bdaddr_t *bdaddr,
 			 u16 max_interval, u16 latency, u16 timeout);
 void mgmt_reenable_advertising(struct hci_dev *hdev);
 void mgmt_smp_complete(struct hci_conn *conn, bool complete);
+#ifdef CONFIG_TIZEN_WIP
+void mgmt_hardware_error(struct hci_dev *hdev, u8 err_code);
+void mgmt_tx_timeout_error(struct hci_dev *hdev);
+void mgmt_rssi_enable_success(struct sock *sk, struct hci_dev *hdev,
+		void *data, struct hci_cc_rsp_enable_rssi *rp, int success);
+void mgmt_rssi_disable_success(struct sock *sk, struct hci_dev *hdev,
+		void *data, struct hci_cc_rsp_enable_rssi *rp, int success);
+int mgmt_set_rssi_threshold(struct sock *sk, struct hci_dev *hdev,
+		void *data, u16 len);
+void mgmt_rssi_alert_evt(struct hci_dev *hdev, struct sk_buff *skb);
+void mgmt_raw_rssi_response(struct hci_dev *hdev,
+		struct hci_cc_rp_get_raw_rssi *rp, int success);
+void mgmt_multi_adv_state_change_evt(struct hci_dev *hdev,
+		struct sk_buff *skb);
+void mgmt_enable_rssi_cc(struct hci_dev *hdev, void *response, u8 status);
+int mgmt_le_conn_updated(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 type,
+		u8 dst_type, u16 conn_interval, u16 conn_latency,
+		u16 supervision_timeout);
+int mgmt_le_conn_update_failed(struct hci_dev *hdev, bdaddr_t *bdaddr,
+		u8 link_type, u8 addr_type, u8 status);
+void mgmt_load_dev_identity_complete(struct hci_dev *hdev, u8 status);
+#endif
 
 u8 hci_le_conn_update(struct hci_conn *conn, u16 min, u16 max, u16 latency,
 		      u16 to_multiplier);
