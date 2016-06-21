@@ -971,8 +971,8 @@ static void chan_close_cb(struct l2cap_chan *chan)
 			       atomic_read(&chan->kref.refcount));
 #ifdef CONFIG_TIZEN_WIP
 			/* IPSP : Send connection changed state info to bluez */
-			mgmt_6lowpan_conn_changed(dev->hdev, NULL, &chan->dst,
-						chan->dst_type, false);
+			mgmt_6lowpan_conn_changed(dev->hdev, dev->netdev->name,
+					&chan->dst, chan->dst_type, false);
 #endif
 			l2cap_chan_put(chan);
 			break;

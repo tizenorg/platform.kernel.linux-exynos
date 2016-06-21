@@ -1262,8 +1262,8 @@ static void l2cap_chan_ready(struct l2cap_chan *chan)
 	 * case of receiving data before the L2CAP info req/rsp
 	 * procedure is complete.
 	 */
-	if (chan->state == BT_CONNECTED)
-		return;
+//	if (chan->state == BT_CONNECTED)
+//		return;
 
 	/* This clears all conf flags, including CONF_NOT_COMPLETE */
 	chan->conf_state = 0;
@@ -6855,8 +6855,8 @@ static void l2cap_data_channel(struct l2cap_conn *conn, u16 cid,
 	 * procdure is done simply assume that the channel is supported
 	 * and mark it as ready.
 	 */
-	if (chan->chan_type == L2CAP_CHAN_FIXED)
-		l2cap_chan_ready(chan);
+//	if (chan->chan_type == L2CAP_CHAN_FIXED)
+//		l2cap_chan_ready(chan);
 
 	if (chan->state != BT_CONNECTED)
 		goto drop;
