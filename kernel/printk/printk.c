@@ -911,6 +911,7 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 	return ret;
 }
 
+#define UNPRINTABLE(c) ((((c) < ' ') || ((c) >= 127) || ((c) == '\\')) && (((c) != '\n') && ((c) != '\t')))
 static ssize_t kmsg_read(struct log_buffer *log_b, struct file *file,
 			 char __user *buf, size_t count, loff_t *ppos)
 {
@@ -992,7 +993,7 @@ static ssize_t kmsg_read(struct log_buffer *log_b, struct file *file,
 	for (i = 0; i < msg->text_len; i++) {
 		unsigned char c = log_text(msg)[i];
 
-		if (c < ' ' || c >= 127 || c == '\\')
+		if (UNPRINTABLE(c))
 			p += scnprintf(p, e - p, "\\x%02x", c);
 		else
 			append_char(&p, e, c);
@@ -1016,7 +1017,7 @@ static ssize_t kmsg_read(struct log_buffer *log_b, struct file *file,
 				continue;
 			}
 
-			if (c < ' ' || c >= 127 || c == '\\') {
+			if (UNPRINTABLE(c)) {
 				p += scnprintf(p, e - p, "\\x%02x", c);
 				continue;
 			}
